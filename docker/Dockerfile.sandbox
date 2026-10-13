@@ -1,0 +1,10 @@
+FROM alpine:3.19
+
+RUN apk add --no-cache gcc g++ musl-dev
+
+# Create a restricted unprivileged runner user
+RUN adduser -D -u 10001 codeguard
+USER codeguard
+WORKDIR /home/codeguard
+
+CMD ["/bin/sh"]
