@@ -7,8 +7,8 @@ from pydantic import BaseModel, Field
 
 
 class ConvertRequest(BaseModel):
-    language: str = Field(..., example="python")
-    source: str = Field(..., example="def fact(n: int) -> int:\n    res = 1\n    for i in range(1, n+1):\n        res = res * i\n    return res")
+    language: str = Field(..., json_schema_extra={"example": "python"})
+    source: str = Field(..., json_schema_extra={"example": "def fact(n: int) -> int:\n    res = 1\n    for i in range(1, n+1):\n        res = res * i\n    return res"})
 
 
 class ConvertResponse(BaseModel):
@@ -18,7 +18,7 @@ class ConvertResponse(BaseModel):
 
 
 class RunRequest(BaseModel):
-    language: str = Field(..., example="c")
+    language: str = Field(..., json_schema_extra={"example": "c"})
     source: str
     stdin: Optional[str] = ""
     tests: Optional[List[Tuple[str, str]]] = None
@@ -101,8 +101,7 @@ class SubmissionResponse(BaseModel):
     generated_c_source: str
     created_at: Optional[datetime] = None
 
-    class Config:
-        from_attributes = True
+    model_config = {"from_attributes": True}
 
 
 class TokenView(BaseModel):

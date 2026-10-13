@@ -1,0 +1,31 @@
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.backend
+    ports:
+      - "8000:8000"
+    environment:
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - ./backend/codeguard.db:/app/backend/codeguard.db
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.frontend
+    ports:
+      - "5173:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+  sandbox:
+    build:
+      context: docker
+      dockerfile: Dockerfile.sandbox
+    image: codeguard-sandbox:latest
+    container_name: codeguard-sandbox
+    profiles:
+      - sandbox-build
