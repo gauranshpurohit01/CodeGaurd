@@ -123,6 +123,7 @@ def check_plagiarism(req: PlagiarismCheckRequest, db: Session = Depends(get_db))
             verdict=rep.verdict,
             matched_ranges_a=rep.matched_token_ranges_a,
             matched_ranges_b=rep.matched_token_ranges_b,
+            target_source=cand.original_source,
             matched_subtrees=[
                 MatchedSubtreeSchema(
                     kind=st.kind,
@@ -159,6 +160,7 @@ def compare_direct(req: DirectCompareRequest):
         verdict=rep.verdict,
         matched_ranges_a=rep.matched_token_ranges_a,
         matched_ranges_b=rep.matched_token_ranges_b,
+        target_source=req.source_b,
         matched_subtrees=[
             MatchedSubtreeSchema(
                 kind=st.kind,

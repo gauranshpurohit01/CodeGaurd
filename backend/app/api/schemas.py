@@ -67,6 +67,7 @@ class MatchReport(BaseModel):
     matched_ranges_a: List[Tuple[int, int]] = []
     matched_ranges_b: List[Tuple[int, int]] = []
     matched_subtrees: List[MatchedSubtreeSchema] = []
+    target_source: Optional[str] = None
 
 
 class PlagiarismCheckRequest(BaseModel):
