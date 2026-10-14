@@ -1,4 +1,4 @@
-.PHONY: help demo seed test matrix run-backend run-frontend build-frontend install clean
+.PHONY: help demo seed test matrix run-backend run-frontend build-frontend build-sandbox install clean
 
 PYTHON ?= .venv/bin/python3
 PYTEST ?= .venv/bin/pytest
@@ -14,6 +14,7 @@ help:
 	@echo "  make run-backend     - Start FastAPI backend server on port 8000"
 	@echo "  make run-frontend    - Start Vite React frontend server on port 5173"
 	@echo "  make build-frontend  - Build production frontend bundle"
+	@echo "  make build-sandbox   - Build Alpine Docker sandbox image (codeguard-sandbox:latest)"
 	@echo "  make install         - Install Python and Node dependencies"
 	@echo "  make clean           - Remove temporary build and cache files"
 
@@ -22,6 +23,10 @@ demo:
 
 seed:
 	$(PYTHON) backend/app/seed_data.py
+
+build-sandbox:
+	docker build -t codeguard-sandbox:latest -f docker/Dockerfile.sandbox docker
+
 
 test:
 	$(PYTEST) -v

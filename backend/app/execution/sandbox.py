@@ -64,7 +64,11 @@ class Sandbox:
             return False
         try:
             res = subprocess.run(["docker", "info"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=2)
-            return res.returncode == 0
+            if res.returncode != 0:
+                return False
+            # Verify the sandbox image exists locally so docker doesn't try to pull from Docker Hub
+            img_res = subprocess.run(["docker", "image", "inspect", self.docker_image], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=2)
+            return img_res.returncode == 0
         except Exception:
             return False
 
@@ -284,6 +288,9 @@ class Sandbox:
             comp_proc = subprocess.run(compile_cmd, capture_output=True, text=True, timeout=10)
 
             if comp_proc.returncode != 0:
+                # If docker failed because image was missing or docker error, gracefully fall back to local sandbox
+                if any(err in comp_proc.stderr for err in ("Unable to find image", "pull access denied", "Error response from daemon")):
+                    return self._run_local(c_code, is_cpp, stdin_data, test_cases, converted)
                 return ExecutionResult(
                     compile_ok=False,
                     compiler_messages=comp_proc.stderr,
