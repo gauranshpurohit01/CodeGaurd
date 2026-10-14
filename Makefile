@@ -1,4 +1,4 @@
-.PHONY: help demo test matrix run-backend run-frontend build-frontend install clean
+.PHONY: help demo seed test matrix run-backend run-frontend build-frontend install clean
 
 PYTHON ?= .venv/bin/python3
 PYTEST ?= .venv/bin/pytest
@@ -8,6 +8,7 @@ help:
 	@echo "CodeGuard - Compiler Construction & Plagiarism Detection Platform"
 	@echo "Available commands:"
 	@echo "  make demo            - Run end-to-end scripted demo (Python -> C -> Sandbox -> Detection)"
+	@echo "  make seed            - Populate database with realistic mock submissions"
 	@echo "  make test            - Run all pytest test suites"
 	@echo "  make matrix          - Run full 8-family benchmark corpus similarity matrix"
 	@echo "  make run-backend     - Start FastAPI backend server on port 8000"
@@ -18,6 +19,9 @@ help:
 
 demo:
 	$(PYTHON) backend/app/demo.py
+
+seed:
+	$(PYTHON) backend/app/seed_data.py
 
 test:
 	$(PYTEST) -v

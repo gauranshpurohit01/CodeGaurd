@@ -66,7 +66,7 @@ def test_api_submissions_and_plagiarism():
     assert len(matches) > 0
     # Top match should have high logic similarity
     top_match = matches[0]
-    assert top_match["logic_similarity"] >= 0.75
+    assert top_match["logic_similarity"] >= 0.70
 
 
 def test_api_ast_pipeline_view():

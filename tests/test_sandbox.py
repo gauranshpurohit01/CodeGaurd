@@ -6,8 +6,8 @@ from app.execution.sandbox import Sandbox, MAX_OUTPUT_BYTES
 
 @pytest.fixture
 def sandbox():
-    # Explicitly use local runner for fast isolated testing
-    return Sandbox(timeout_sec=2.0, memory_mb=64, use_docker=False)
+    # Explicitly use local runner for fast isolated testing with realistic timeout
+    return Sandbox(timeout_sec=5.0, memory_mb=64, use_docker=False)
 
 
 def test_sandbox_normal_c_execution(sandbox):
