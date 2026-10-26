@@ -28,5 +28,6 @@ app.include_router(router)
 
 
 @app.get("/health")
+@app.get("/api/health")
 def health_check():
     return {"status": "ok", "platform": "CodeGuard"}
