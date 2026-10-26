@@ -26,14 +26,17 @@ export const App: React.FC = () => {
   const [source, setSource] = useState(DEFAULT_CODE);
   const [language, setLanguage] = useState<SupportedLanguage>('c');
   const [plagiarismReports, setPlagiarismReports] = useState<MatchReport[]>([]);
+  const [webPlagiarism, setWebPlagiarism] = useState<any>(undefined);
 
-  const handleCheckPlagiarism = (matches: MatchReport[]) => {
+  const handleCheckPlagiarism = (matches: MatchReport[], webResult?: any) => {
     setPlagiarismReports(matches);
+    setWebPlagiarism(webResult);
     setActiveTab('report');
   };
 
   const handleCompareResult = (matches: MatchReport[], queryCode: string) => {
     setPlagiarismReports(matches);
+    setWebPlagiarism(undefined);
     setSource(queryCode);
     setActiveTab('report');
   };
@@ -55,7 +58,11 @@ export const App: React.FC = () => {
         )}
 
         {activeTab === 'report' && (
-          <ReportView reports={plagiarismReports} querySource={source} />
+          <ReportView
+            reports={plagiarismReports}
+            querySource={source}
+            webPlagiarism={webPlagiarism}
+          />
         )}
 
         {activeTab === 'pipeline' && (

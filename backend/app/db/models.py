@@ -28,3 +28,15 @@ class FingerprintIndex(Base):
     __table_args__ = (
         Index("idx_hash_submission", "hash_val", "submission_id"),
     )
+
+
+class WebCandidateCache(Base):
+    __tablename__ = "web_candidate_cache"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    query_hash = Column(String(64), nullable=False, unique=True, index=True)
+    search_query = Column(String(255), nullable=False)
+    language = Column(String(50), nullable=False)
+    results_json = Column(JSON, nullable=False)  # List of candidate dicts
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+

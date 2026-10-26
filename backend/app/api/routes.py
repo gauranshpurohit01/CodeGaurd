@@ -21,6 +21,11 @@ from app.api.schemas import (
     SubmissionResponse,
     ASTViewResponse,
     TokenView,
+    WebMatchSchema,
+    WebPlagiarismSchema,
+    LocalPlagiarismSchema,
+    ExecutionSummarySchema,
+    FullAnalysisResponse,
 )
 from app.frontends.converter import convert_to_c
 from app.execution.sandbox import Sandbox
@@ -30,6 +35,7 @@ from app.engine.c_parser import parse_c
 from app.engine.ast_normalize import normalize_ast
 from app.engine.ast_similarity import compute_ast_similarity
 from app.engine.report import check_plagiarism_c, calculate_verdict
+from app.retrieval.web_plagiarism_runner import run_web_plagiarism_pipeline
 
 
 router = APIRouter(prefix="/api", tags=["CodeGuard API"])
@@ -48,14 +54,83 @@ def convert_code(req: ConvertRequest):
 
 
 @router.post("/run", response_model=RunResponse)
-def run_code(req: RunRequest):
-    """Compile and execute code inside the sandbox with strict resource limits."""
+def run_code(req: RunRequest, db: Session = Depends(get_db)):
+    """Compile and execute code inside the sandbox with strict resource limits,
+    with optional integrated local and web plagiarism checks.
+    """
     res = sandbox_instance.run(
         language=req.language,
         source=req.source,
         stdin_data=req.stdin or "",
         test_cases=req.tests,
     )
+
+    local_plag: Optional[LocalPlagiarismSchema] = None
+    web_plag: Optional[WebPlagiarismSchema] = None
+
+    if req.check_plagiarism or req.check_web:
+        # Run local plagiarism check if requested
+        if req.check_plagiarism:
+            repo = SubmissionRepository(db)
+            conv_q = convert_to_c(req.language, req.source)
+            c_q = conv_q.c_source if conv_q.success else req.source
+            candidates = repo.get_all_submissions()[:20]
+            local_matches = []
+            for cand in candidates:
+                rep = check_plagiarism_c(c_q, cand.generated_c_source)
+                local_matches.append(MatchReport(
+                    submission_id=cand.id,
+                    title=cand.title,
+                    language=cand.language,
+                    token_similarity=rep.token_similarity,
+                    token_containment_a=rep.token_containment_a,
+                    token_containment_b=rep.token_containment_b,
+                    logic_similarity=rep.logic_similarity,
+                    overall_similarity=rep.overall_similarity,
+                    verdict=rep.verdict,
+                    matched_ranges_a=rep.matched_token_ranges_a,
+                    matched_ranges_b=rep.matched_token_ranges_b,
+                    target_source=cand.original_source,
+                ))
+            local_matches.sort(key=lambda m: m.overall_similarity, reverse=True)
+            local_plag = LocalPlagiarismSchema(
+                checked=True,
+                match_count=len(local_matches),
+                top_verdict=local_matches[0].verdict if local_matches else "low",
+                matches=local_matches,
+            )
+
+        # Run web candidate retrieval if requested
+        if req.check_web:
+            web_rep = run_web_plagiarism_pipeline(
+                language=req.language,
+                source=req.source,
+                threshold=0.35,
+                db=db,
+            )
+            web_plag = WebPlagiarismSchema(
+                checked=web_rep.checked,
+                search_queries_used=web_rep.search_queries_used,
+                matches=[
+                    WebMatchSchema(
+                        source_url=m.source_url,
+                        repository=m.repository,
+                        token_similarity=m.token_similarity,
+                        logic_similarity=m.logic_similarity,
+                        composite_score=m.composite_score,
+                        token_similarity_num=m.token_similarity_num,
+                        logic_similarity_num=m.logic_similarity_num,
+                        composite_score_num=m.composite_score_num,
+                        verdict=m.verdict,
+                        matched_ranges_a=m.matched_ranges_a,
+                        matched_ranges_b=m.matched_ranges_b,
+                        target_source=m.target_source,
+                    )
+                    for m in web_rep.matches
+                ],
+                status_message=web_rep.status_message,
+            )
+
     return RunResponse(
         compile_ok=res.compile_ok,
         compiler_messages=res.compiler_messages,
@@ -77,12 +152,16 @@ def run_code(req: RunRequest):
             }
             for tr in res.test_results
         ],
+        local_plagiarism=local_plag,
+        web_plagiarism=web_plag,
     )
 
 
 @router.post("/plagiarism/check", response_model=PlagiarismCheckResponse)
 def check_plagiarism(req: PlagiarismCheckRequest, db: Session = Depends(get_db)):
-    """Check code against stored submissions at both token level and AST logic level."""
+    """Check code against stored submissions at both token level and AST logic level,
+    alongside real-time web candidate retrieval against live GitHub repositories.
+    """
     repo = SubmissionRepository(db)
 
     # 1. Convert query to C
@@ -94,7 +173,7 @@ def check_plagiarism(req: PlagiarismCheckRequest, db: Session = Depends(get_db))
     fps_query = winnow_tokens(tokens_query)
     query_hashes = [str(fp.hash_val) for fp in fps_query]
 
-    # 3. Determine candidates to compare with
+    # 3. Determine local candidates to compare with
     if isinstance(req.compare_with, list) and req.compare_with:
         candidates = [repo.get_submission(sid) for sid in req.compare_with]
         candidates = [c for c in candidates if c is not None]
@@ -138,7 +217,213 @@ def check_plagiarism(req: PlagiarismCheckRequest, db: Session = Depends(get_db))
 
     # Sort matches by overall similarity descending
     matches.sort(key=lambda m: m.overall_similarity, reverse=True)
-    return PlagiarismCheckResponse(query_language=req.language, matches=matches)
+
+    local_plag = LocalPlagiarismSchema(
+        checked=True,
+        match_count=len(matches),
+        top_verdict=matches[0].verdict if matches else "low",
+        matches=matches,
+    )
+
+    # 4. Real-time web candidate retrieval & plagiarism check
+    web_plag: Optional[WebPlagiarismSchema] = None
+    if req.check_web:
+        web_rep = run_web_plagiarism_pipeline(
+            language=req.language,
+            source=req.source,
+            threshold=0.35,
+            db=db,
+        )
+        web_matches = [
+            WebMatchSchema(
+                source_url=m.source_url,
+                repository=m.repository,
+                token_similarity=m.token_similarity,
+                logic_similarity=m.logic_similarity,
+                composite_score=m.composite_score,
+                token_similarity_num=m.token_similarity_num,
+                logic_similarity_num=m.logic_similarity_num,
+                composite_score_num=m.composite_score_num,
+                verdict=m.verdict,
+                matched_ranges_a=m.matched_ranges_a,
+                matched_ranges_b=m.matched_ranges_b,
+                target_source=m.target_source,
+            )
+            for m in web_rep.matches
+        ]
+        web_plag = WebPlagiarismSchema(
+            checked=web_rep.checked,
+            search_queries_used=web_rep.search_queries_used,
+            matches=web_matches,
+            status_message=web_rep.status_message,
+        )
+    else:
+        web_plag = WebPlagiarismSchema(
+            checked=False,
+            search_queries_used=[],
+            matches=[],
+            status_message="Web candidate retrieval disabled.",
+        )
+
+    # 5. Optional sandbox execution output
+    execution_summary = None
+    if req.run_execution:
+        exec_res = sandbox_instance.run(
+            language=req.language,
+            source=req.source,
+            stdin_data="",
+        )
+        execution_summary = ExecutionSummarySchema(
+            compile_ok=exec_res.compile_ok,
+            compiler_messages=exec_res.compiler_messages,
+            stdout=exec_res.stdout,
+            stderr=exec_res.stderr,
+            exit_code=exec_res.exit_code,
+            time_ms=exec_res.time_ms,
+            memory_kb=exec_res.memory_kb,
+            timed_out=exec_res.timed_out,
+            killed_reason=exec_res.killed_reason,
+        )
+
+    return PlagiarismCheckResponse(
+        query_language=req.language,
+        matches=matches,
+        local_plagiarism=local_plag,
+        web_plagiarism=web_plag,
+        execution=execution_summary,
+    )
+
+
+@router.post("/plagiarism/web-check", response_model=WebPlagiarismSchema)
+def check_web_plagiarism_only(req: PlagiarismCheckRequest, db: Session = Depends(get_db)):
+    """Run real-time web candidate retrieval against GitHub repositories directly."""
+    web_rep = run_web_plagiarism_pipeline(
+        language=req.language,
+        source=req.source,
+        threshold=0.35,
+        db=db,
+    )
+    return WebPlagiarismSchema(
+        checked=web_rep.checked,
+        search_queries_used=web_rep.search_queries_used,
+        matches=[
+            WebMatchSchema(
+                source_url=m.source_url,
+                repository=m.repository,
+                token_similarity=m.token_similarity,
+                logic_similarity=m.logic_similarity,
+                composite_score=m.composite_score,
+                token_similarity_num=m.token_similarity_num,
+                logic_similarity_num=m.logic_similarity_num,
+                composite_score_num=m.composite_score_num,
+                verdict=m.verdict,
+                matched_ranges_a=m.matched_ranges_a,
+                matched_ranges_b=m.matched_ranges_b,
+                target_source=m.target_source,
+            )
+            for m in web_rep.matches
+        ],
+        status_message=web_rep.status_message,
+    )
+
+
+@router.post("/analyze", response_model=FullAnalysisResponse)
+def analyze_full_pipeline(req: RunRequest, db: Session = Depends(get_db)):
+    """Run full integrated pipeline: execution output + local plagiarism + real-time web plagiarism."""
+    # 1. Compile & Execute in sandbox
+    res = sandbox_instance.run(
+        language=req.language,
+        source=req.source,
+        stdin_data=req.stdin or "",
+        test_cases=req.tests,
+    )
+    exec_summary = ExecutionSummarySchema(
+        compile_ok=res.compile_ok,
+        compiler_messages=res.compiler_messages,
+        stdout=res.stdout,
+        stderr=res.stderr,
+        exit_code=res.exit_code,
+        time_ms=res.time_ms,
+        memory_kb=res.memory_kb,
+        timed_out=res.timed_out,
+        killed_reason=res.killed_reason,
+    )
+
+    # 2. Local Plagiarism Check
+    repo = SubmissionRepository(db)
+    conv_q = convert_to_c(req.language, req.source)
+    c_q = conv_q.c_source if conv_q.success else req.source
+    candidates = repo.get_all_submissions()[:50]
+    local_matches = []
+    for cand in candidates:
+        rep = check_plagiarism_c(c_q, cand.generated_c_source)
+        local_matches.append(MatchReport(
+            submission_id=cand.id,
+            title=cand.title,
+            language=cand.language,
+            token_similarity=rep.token_similarity,
+            token_containment_a=rep.token_containment_a,
+            token_containment_b=rep.token_containment_b,
+            logic_similarity=rep.logic_similarity,
+            overall_similarity=rep.overall_similarity,
+            verdict=rep.verdict,
+            matched_ranges_a=rep.matched_token_ranges_a,
+            matched_ranges_b=rep.matched_token_ranges_b,
+            target_source=cand.original_source,
+            matched_subtrees=[
+                MatchedSubtreeSchema(
+                    kind=st.kind,
+                    size=st.size,
+                    line_a=st.line_a,
+                    line_b=st.line_b,
+                    hash_val=st.hash_val,
+                )
+                for st in rep.matched_subtrees
+            ],
+        ))
+    local_matches.sort(key=lambda m: m.overall_similarity, reverse=True)
+    local_plag = LocalPlagiarismSchema(
+        checked=True,
+        match_count=len(local_matches),
+        top_verdict=local_matches[0].verdict if local_matches else "low",
+        matches=local_matches,
+    )
+
+    # 3. Real-Time Web Plagiarism Check
+    web_rep = run_web_plagiarism_pipeline(
+        language=req.language,
+        source=req.source,
+        threshold=0.35,
+        db=db,
+    )
+    web_plag = WebPlagiarismSchema(
+        checked=web_rep.checked,
+        search_queries_used=web_rep.search_queries_used,
+        matches=[
+            WebMatchSchema(
+                source_url=m.source_url,
+                repository=m.repository,
+                token_similarity=m.token_similarity,
+                logic_similarity=m.logic_similarity,
+                composite_score=m.composite_score,
+                token_similarity_num=m.token_similarity_num,
+                logic_similarity_num=m.logic_similarity_num,
+                composite_score_num=m.composite_score_num,
+                verdict=m.verdict,
+                matched_ranges_a=m.matched_ranges_a,
+                matched_ranges_b=m.matched_ranges_b,
+                target_source=m.target_source,
+            )
+            for m in web_rep.matches
+        ],
+        status_message=web_rep.status_message,
+    )
+
+    return FullAnalysisResponse(
+        execution=exec_summary,
+        local_plagiarism=local_plag,
+        web_plagiarism=web_plag,
+    )
 
 
 @router.post("/compare", response_model=MatchReport)

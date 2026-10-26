@@ -1,14 +1,14 @@
 import React, { useState } from 'react';
 import Editor from '@monaco-editor/react';
-import { Play, ArrowRightLeft, ShieldAlert, Save, Terminal, Clock, Cpu, CheckCircle2, AlertTriangle } from 'lucide-react';
-import { SupportedLanguage, RunResponse, ConvertResponse, MatchReport } from '../types';
+import { Play, ArrowRightLeft, ShieldAlert, Save, Terminal, Clock, Cpu, CheckCircle2, AlertTriangle, Globe, ExternalLink, ShieldCheck } from 'lucide-react';
+import { SupportedLanguage, RunResponse, ConvertResponse, MatchReport, WebPlagiarismResult } from '../types';
 
 interface EditorViewProps {
   source: string;
   setSource: (s: string) => void;
   language: SupportedLanguage;
   setLanguage: (l: SupportedLanguage) => void;
-  onCheckPlagiarism: (report: MatchReport[]) => void;
+  onCheckPlagiarism: (report: MatchReport[], webResult?: WebPlagiarismResult) => void;
   onOpenPipeline: () => void;
 }
 
@@ -47,6 +47,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
   const [isRunning, setIsRunning] = useState(false);
   const [isConverting, setIsConverting] = useState(false);
   const [isChecking, setIsChecking] = useState(false);
+  const [checkWeb, setCheckWeb] = useState(true);
   const [runResult, setRunResult] = useState<RunResponse | null>(null);
   const [convertResult, setConvertResult] = useState<ConvertResponse | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
@@ -54,16 +55,24 @@ export const EditorView: React.FC<EditorViewProps> = ({
 
   const handleRun = async () => {
     setIsRunning(true);
-    setStatusMessage('Compiling and executing in sandbox...');
+    setStatusMessage('Compiling and executing in sandbox (with real-time plagiarism check)...');
     try {
       const resp = await fetch('/api/run', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ language, source, stdin }),
+        body: JSON.stringify({ language, source, stdin, check_plagiarism: true, check_web: checkWeb }),
       });
       const data: RunResponse = await resp.json();
       setRunResult(data);
-      setStatusMessage(data.compile_ok ? 'Execution completed.' : 'Compilation failed.');
+      if (data.compile_ok) {
+        let msg = 'Execution completed.';
+        if (data.web_plagiarism?.matches && data.web_plagiarism.matches.length > 0) {
+          msg += ` Found ${data.web_plagiarism.matches.length} matching repositories on GitHub!`;
+        }
+        setStatusMessage(msg);
+      } else {
+        setStatusMessage('Compilation failed.');
+      }
     } catch (err: any) {
       setStatusMessage(`Error executing code: ${err.message}`);
     } finally {
@@ -96,15 +105,15 @@ export const EditorView: React.FC<EditorViewProps> = ({
 
   const handleCheckPlagiarism = async () => {
     setIsChecking(true);
-    setStatusMessage('Analyzing token winnowing & AST alignment...');
+    setStatusMessage('Analyzing token winnowing, AST alignment & live GitHub candidates...');
     try {
       const resp = await fetch('/api/plagiarism/check', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ language, source, compare_with: 'database' }),
+        body: JSON.stringify({ language, source, compare_with: 'database', check_web: checkWeb }),
       });
       const data = await resp.json();
-      onCheckPlagiarism(data.matches);
+      onCheckPlagiarism(data.matches, data.web_plagiarism);
     } catch (err: any) {
       setStatusMessage(`Plagiarism check error: ${err.message}`);
     } finally {
@@ -192,6 +201,17 @@ export const EditorView: React.FC<EditorViewProps> = ({
             <ShieldAlert className="h-4 w-4" />
             <span>{isChecking ? 'Checking...' : 'Check Plagiarism'}</span>
           </button>
+
+          <label className="flex items-center space-x-1.5 cursor-pointer bg-slate-950 px-2.5 py-1.5 rounded-lg border border-slate-800 text-xs text-slate-300 hover:border-slate-700 select-none">
+            <input
+              type="checkbox"
+              checked={checkWeb}
+              onChange={(e) => setCheckWeb(e.target.checked)}
+              className="rounded bg-slate-900 border-slate-700 text-cyan-500 focus:ring-0"
+            />
+            <Globe className="h-3.5 w-3.5 text-cyan-400" />
+            <span>Live GitHub</span>
+          </label>
 
           <button
             onClick={onOpenPipeline}
@@ -307,6 +327,54 @@ export const EditorView: React.FC<EditorViewProps> = ({
                         Process finished with exit code {runResult.exit_code}
                         {runResult.timed_out && ' (TIMED OUT)'}
                       </div>
+
+                      {/* Real-Time Web & GitHub Plagiarism Matches */}
+                      {runResult.web_plagiarism && runResult.web_plagiarism.checked && (
+                        <div className="mt-3 pt-3 border-t border-slate-800">
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="font-semibold text-cyan-400 flex items-center gap-1.5 text-xs">
+                              <Globe className="h-3.5 w-3.5" /> Live GitHub Plagiarism Matches:
+                            </span>
+                            {runResult.web_plagiarism.search_queries_used.length > 0 && (
+                              <span className="text-[10px] text-slate-500 font-mono">
+                                Queries: {runResult.web_plagiarism.search_queries_used.slice(0, 2).join(', ')}
+                              </span>
+                            )}
+                          </div>
+
+                          {runResult.web_plagiarism.matches.length > 0 ? (
+                            <div className="space-y-1.5">
+                              {runResult.web_plagiarism.matches.map((m, i) => (
+                                <div key={i} className="bg-slate-900 border border-slate-800 rounded-lg p-2.5 flex items-center justify-between text-xs">
+                                  <div className="flex items-center space-x-2 truncate">
+                                    <a
+                                      href={m.source_url}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className="text-cyan-400 hover:underline flex items-center gap-1 font-semibold truncate"
+                                      title={m.source_url}
+                                    >
+                                      <span>{m.repository}</span>
+                                      <ExternalLink className="h-3 w-3 shrink-0" />
+                                    </a>
+                                  </div>
+                                  <div className="flex items-center space-x-2.5 shrink-0 text-[11px]">
+                                    <span className="text-slate-400">Token: <strong className="text-slate-200">{m.token_similarity}</strong></span>
+                                    <span className="text-slate-400">Logic: <strong className="text-slate-200">{m.logic_similarity}</strong></span>
+                                    <span className="px-2 py-0.5 rounded font-bold text-slate-950 bg-rose-400">
+                                      {m.composite_score}
+                                    </span>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <div className="text-slate-500 text-[11px] italic">
+                              {runResult.web_plagiarism.status_message || 'No live open-source matches exceeded 35% threshold.'}
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>

@@ -1,14 +1,15 @@
 import React, { useState } from 'react';
-import { AlertCircle, CheckCircle2, ShieldAlert, FileCode2, Layers, GitCompare, ArrowRightLeft, Sparkles } from 'lucide-react';
-import { MatchReport, SupportedLanguage } from '../types';
+import { AlertCircle, CheckCircle2, ShieldAlert, FileCode2, Layers, GitCompare, ArrowRightLeft, Sparkles, Globe, ExternalLink } from 'lucide-react';
+import { MatchReport, SupportedLanguage, WebPlagiarismResult, WebMatch } from '../types';
 
 interface ReportViewProps {
   reports: MatchReport[];
   querySource: string;
+  webPlagiarism?: WebPlagiarismResult;
   onCustomCompare?: (rep: MatchReport, codeA: string) => void;
 }
 
-export const ReportView: React.FC<ReportViewProps> = ({ reports, querySource, onCustomCompare }) => {
+export const ReportView: React.FC<ReportViewProps> = ({ reports, querySource, webPlagiarism, onCustomCompare }) => {
   const [selectedMatchIndex, setSelectedMatchIndex] = useState(0);
   const [showDirectCompare, setShowDirectCompare] = useState(reports.length === 0);
 
@@ -51,12 +52,54 @@ def main() -> int:
 
   // Sync with prop updates if they change
   React.useEffect(() => {
-    setActiveReports(reports);
-    setActiveQuerySource(querySource);
     if (reports.length > 0) {
+      setActiveReports(reports);
       setShowDirectCompare(false);
+    } else if (webPlagiarism && webPlagiarism.matches && webPlagiarism.matches.length > 0) {
+      const top = webPlagiarism.matches[0];
+      const tokSim = (top.token_similarity_num != null ? top.token_similarity_num : parseFloat(top.token_similarity || '0')) / 100;
+      const rep: MatchReport = {
+        submission_id: undefined,
+        title: `GitHub: ${top.repository}`,
+        overall_similarity: (top.composite_score_num != null ? top.composite_score_num : parseFloat(top.composite_score || '0')) / 100,
+        token_similarity: tokSim,
+        token_containment_a: tokSim,
+        token_containment_b: tokSim,
+        logic_similarity: (top.logic_similarity_num != null ? top.logic_similarity_num : parseFloat(top.logic_similarity || '0')) / 100,
+        matched_ranges_a: top.matched_ranges_a || [],
+        matched_ranges_b: top.matched_ranges_b || [],
+        matched_subtrees: [],
+        verdict: top.verdict || ((top.composite_score_num || parseFloat(top.composite_score || '0')) >= 70 ? 'likely copied' : 'suspicious'),
+        target_source: top.target_source || '',
+      };
+      setActiveReports([rep]);
+      setShowDirectCompare(false);
+    } else {
+      setActiveReports(reports);
     }
-  }, [reports, querySource]);
+    setActiveQuerySource(querySource);
+  }, [reports, querySource, webPlagiarism]);
+
+  const handleSelectWebMatch = (wm: WebMatch) => {
+    const tokSim = (wm.token_similarity_num != null ? wm.token_similarity_num : parseFloat(wm.token_similarity || '0')) / 100;
+    const rep: MatchReport = {
+      submission_id: undefined,
+      title: `GitHub: ${wm.repository}`,
+      overall_similarity: (wm.composite_score_num != null ? wm.composite_score_num : parseFloat(wm.composite_score || '0')) / 100,
+      token_similarity: tokSim,
+      token_containment_a: tokSim,
+      token_containment_b: tokSim,
+      logic_similarity: (wm.logic_similarity_num != null ? wm.logic_similarity_num : parseFloat(wm.logic_similarity || '0')) / 100,
+      matched_ranges_a: wm.matched_ranges_a || [],
+      matched_ranges_b: wm.matched_ranges_b || [],
+      matched_subtrees: [],
+      verdict: wm.verdict || ((wm.composite_score_num || parseFloat(wm.composite_score || '0')) >= 70 ? 'likely copied' : 'suspicious'),
+      target_source: wm.target_source || `// Candidate source from ${wm.source_url}\n// (Full source fetched via GitHub Code Search API)`,
+    };
+    setActiveReports([rep, ...activeReports.filter((r) => r.title !== rep.title)]);
+    setSelectedMatchIndex(0);
+    setShowDirectCompare(false);
+  };
 
   const handleRunDirectCompare = async () => {
     setIsComparing(true);
@@ -224,8 +267,99 @@ def main() -> int:
         </div>
       )}
 
+      {/* Live GitHub / Web Candidates Section */}
+      {webPlagiarism && webPlagiarism.checked && (
+        <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-sm flex flex-col gap-3.5">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-3">
+            <div className="flex items-center space-x-2.5">
+              <div className="h-8 w-8 bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 rounded-lg flex items-center justify-center">
+                <Globe className="h-4 w-4" />
+              </div>
+              <div>
+                <div className="flex items-center space-x-2">
+                  <span className="text-sm font-bold text-slate-100">Live Open-Source (GitHub) Candidate Retrieval</span>
+                  <span className="text-[11px] bg-slate-800 text-slate-300 border border-slate-700 px-2 py-0.5 rounded-full font-mono">
+                    {webPlagiarism.matches.length} candidate{webPlagiarism.matches.length === 1 ? '' : 's'} found
+                  </span>
+                </div>
+                <p className="text-xs text-slate-400">High-entropy code signatures queried against the GitHub Code Search API</p>
+              </div>
+            </div>
+
+            {webPlagiarism.search_queries_used && webPlagiarism.search_queries_used.length > 0 && (
+              <div className="flex flex-wrap items-center gap-1.5 text-xs text-slate-400">
+                <span className="font-semibold text-slate-500 uppercase tracking-wider text-[10px]">Signatures:</span>
+                {webPlagiarism.search_queries_used.map((q, idx) => (
+                  <span key={idx} className="bg-slate-950 border border-slate-800 text-cyan-300 font-mono text-[11px] px-2 py-0.5 rounded">
+                    {q}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {webPlagiarism.status_message && (
+            <p className="text-xs text-slate-400 italic">
+              {webPlagiarism.status_message}
+            </p>
+          )}
+
+          {webPlagiarism.matches.length > 0 ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 pt-1">
+              {webPlagiarism.matches.map((m, idx) => (
+                <div
+                  key={idx}
+                  className="bg-slate-950 border border-slate-800 hover:border-slate-700 rounded-lg p-3.5 flex flex-col justify-between gap-3 transition-colors shadow-sm"
+                >
+                  <div>
+                    <div className="flex items-center justify-between gap-2 mb-2">
+                      <a
+                        href={m.source_url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-xs font-bold text-cyan-400 hover:underline flex items-center gap-1.5 truncate"
+                        title={m.source_url}
+                      >
+                        <span className="truncate">{m.repository}</span>
+                        <ExternalLink className="h-3 w-3 shrink-0" />
+                      </a>
+                      <span className="px-2 py-0.5 rounded text-[11px] font-extrabold text-slate-950 bg-rose-400 shrink-0">
+                        {m.composite_score}
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2 mt-2 text-[11px] font-mono">
+                      <div className="bg-slate-900 border border-slate-800/80 rounded p-1.5">
+                        <span className="text-slate-500 block text-[9px] uppercase">Token Sim</span>
+                        <span className="text-cyan-400 font-bold">{m.token_similarity}</span>
+                      </div>
+                      <div className="bg-slate-900 border border-slate-800/80 rounded p-1.5">
+                        <span className="text-slate-500 block text-[9px] uppercase">Logic Sim</span>
+                        <span className="text-indigo-400 font-bold">{m.logic_similarity}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={() => handleSelectWebMatch(m)}
+                    className="w-full flex items-center justify-center space-x-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 hover:border-cyan-500/50 py-1.5 px-3 rounded text-xs font-semibold transition-all"
+                  >
+                    <GitCompare className="h-3.5 w-3.5 text-cyan-400" />
+                    <span>Inspect Side-by-Side Diff</span>
+                  </button>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-xs text-slate-500 italic py-1">
+              No open-source candidate files met or exceeded the 35% similarity threshold.
+            </div>
+          )}
+        </div>
+      )}
+
       {/* No Reports Fallback */}
-      {(!activeReports || activeReports.length === 0) && !showDirectCompare && (
+      {(!activeReports || activeReports.length === 0) && !showDirectCompare && (!webPlagiarism || !webPlagiarism.checked) && (
         <div className="flex-1 max-w-7xl mx-auto w-full p-8 flex flex-col items-center justify-center text-center">
           <div className="h-16 w-16 bg-slate-800 rounded-full flex items-center justify-center mb-4 text-slate-500">
             <ShieldAlert className="h-8 w-8" />
