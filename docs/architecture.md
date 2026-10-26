@@ -65,6 +65,9 @@ flowchart TD
 | **`java_to_ir.py`** | `backend/app/frontends/` | Translates Java static methods, `System.out.println`, and `Math` calls to C IR. |
 | **`c_codegen.py`** | `backend/app/codegen/` | Pretty-prints shared IR into valid, compilable C source code. |
 | **`sandbox.py`** | `backend/app/execution/` | Resource-constrained runner (Docker sandbox + local `setrlimit` fallback). |
+| **`signature_extractor.py`** | `backend/app/retrieval/` | Shannon-entropy & AST-guided signature token extractor. |
+| **`web_retriever.py`** | `backend/app/retrieval/` | GitHub REST Code Search API client with in-memory decoding and SQLite caching. |
+| **`web_plagiarism_runner.py`** | `backend/app/retrieval/` | Background multi-threaded pipeline comparing query against web candidates. |
 
 ---
 
@@ -160,3 +163,40 @@ PrimaryExpr ::= IDENTIFIER | NUMBER | STRING | CHAR | "(" Expression ")" ;
 5. **Consolidated Plagiarism Score**:
    $$\text{Score}_{\text{overall}} = 0.40 \cdot \text{Sim}_{\text{token}} + 0.60 \cdot \text{Sim}_{\text{logic}}$$
    - Verdict: $\ge 0.75 \implies \text{likely copied}$, $\ge 0.50 \implies \text{suspicious}$, $< 0.50 \implies \text{low}$.
+
+---
+
+## 6. Real-Time Web Candidate Retrieval Pipeline
+
+```mermaid
+flowchart LR
+    Source["User Source Code"] --> Sig["Signature Extractor\n(Entropy & Identifiers)"]
+    Sig -->|2-4 Unique Tokens| GH["GitHub Code Search API\nq={sig}+language:{lang}"]
+    Sig -->|Generic Boilerplate| Skip["Local Database Only"]
+    GH --> MemoryBuf["In-Memory Buffer\n(Base64 Decoded Source)"]
+    MemoryBuf --> DB["SQLite Cache\n(hash(sig) -> JSON)"]
+    MemoryBuf --> Engine["Two-Tier Plagiarism Check\n(Winnowing + AST Tree Align)"]
+    Engine --> Threshold{"Composite Score\n>= 35% ?"}
+    Threshold -->|Yes| Report["Flag Web Match\n& Surface Diff"]
+    Threshold -->|No| Discard["Discard Candidate"]
+```
+
+### 6.1 Entropy-Based Signature Extraction
+The signature extractor selects 2 to 4 distinctive identifiers:
+- Filters out universal keywords and library headers (`main`, `solve`, `test`, `stdio`, `iostream`, `stdlib`, `print`, etc.).
+- Computes Shannon entropy: $H(s) = -\sum_{c} p(c) \log_2 p(c)$ to prioritize rare and algorithmic identifiers (`find_shortest_cycle`, `MAX_VERTICES_LIMIT`, `fibonacci_memo`).
+- Captures unique string literals and domain-specific constants.
+- If no distinctive tokens exist (pure boilerplate), extraction returns an empty list to avoid redundant API queries.
+
+### 6.2 GitHub REST Code Search Client
+- **Endpoint**: `GET https://api.github.com/search/code?q={query}+language:{target_lang}`
+- **Authentication**: Supports `GITHUB_TOKEN` from `.env` for elevated rate limits (30 req/min).
+- **In-Memory Buffering**: Retrieves raw source via GitHub API `base64` decoding into memory strings; no intermediate files are written to disk.
+- **Resilience**: 4-second hard request timeout with exponential retry and rate limit detection.
+- **Two-Tier Cache**: In-memory hash table backed by persistent SQLite table `WebCandidateCache` keyed by `SHA-256(query + language)`.
+
+### 6.3 Threshold Filtering & Diffing
+- Evaluates each retrieved web candidate through the token-level Winnowing and logic-level AST normalizer.
+- Flags matches with composite score $\ge 35\%$.
+- Transmits repository URLs, token scores, logic scores, and source text to the UI for interactive side-by-side inspection.
+

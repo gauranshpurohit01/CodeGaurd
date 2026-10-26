@@ -98,10 +98,17 @@ def run_demo():
     print(f"Overall Plagiarism Score:           {rep_diff.overall_similarity * 100:.1f}%")
     print(f"Verdict:                            {rep_diff.verdict.upper()}")
 
+    # 5. Extract High-Entropy Signatures for Web Candidate Retrieval
+    print("\n[STEP 5] Extracting high-entropy signatures for GitHub Code Search API...")
+    from app.retrieval.signature_extractor import extract_signatures
+    signatures = extract_signatures("python", PYTHON_FACTORIAL)
+    print(f"Extracted Search Signatures:        {signatures}")
+
     print("\n" + "=" * 80)
     print("[SUCCESS] Demonstration complete!")
     print(f"Restructured logic scored {rep_same.logic_similarity*100:.1f}% (Verdict: {rep_same.verdict})")
     print(f"Different logic scored    {rep_diff.logic_similarity*100:.1f}% (Verdict: {rep_diff.verdict})")
+    print(f"Web retrieval search query: {signatures}")
     print("=" * 80)
 
 

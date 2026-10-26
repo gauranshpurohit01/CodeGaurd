@@ -11,11 +11,12 @@
 - **100% Hand-Crafted Compiler Pipeline**: Zero third-party parser generators or AST libraries (no ANTLR, Tree-Sitter, libclang, Python `ast`, or `javalang`). Pure recursive-descent parsers with statement-boundary error recovery.
 - **Universal AST Intermediate Representation (IR)**: A unified node schema bridging C, typed Python, and Java.
 - **Source-to-Source Mini Compilers**: Translates typed Python and Java subsets into ISO C99 source code with C standard library mapping and automatic type lowering.
-- **Dual-Level Plagiarism Engine**:
+- **Three-Tier Plagiarism Engine**:
   - **Token Level**: Winnowing algorithm with 64-bit rolling polynomial hash ($K=5, W=4$, base 257, mod $2^{61}-1$).
   - **Semantic Logic Level**: AST canonicalization (loop unification, ternary normalization, commutative operator sorting, De Morgan’s laws) paired with tree alignment dynamic programming ($O(N \cdot M)$) and deterministic Merkle subtree hashing.
+  - **Live Web Level**: High-entropy signature extractor querying GitHub Code Search API in real-time with in-memory decoding and SQLite caching.
 - **Isolated Execution Sandbox**: Double-containment execution via Docker containers with local `resource.setrlimit` fallback (CPU timeout, 64 KB stdout truncation, memory ceiling).
-- **Interactive Web Interface**: React + Vite + TypeScript + Tailwind CSS + Monaco Editor featuring a **4-stage compiler pipeline visualizer** (Tokens, Raw AST, Canonical AST, Generated C) and synchronized side-by-side diffing.
+- **Interactive Web Interface**: React + Vite + TypeScript + Tailwind CSS + Monaco Editor featuring a **4-stage compiler pipeline visualizer** (Tokens, Raw AST, Canonical AST, Generated C), direct 2-snippet custom comparison, and synchronized side-by-side diffing for both local and GitHub matches.
 
 ---
 
@@ -27,16 +28,24 @@ Clone the repository and run:
 # 1. Install dependencies
 make install
 
-# 2. Run end-to-end verification demo
+# 2. (Optional) Seed mock database with algorithmic submissions
+make seed
+
+# 3. Run end-to-end verification demo
 make demo
 
-# 3. Launch the full platform
+# 4. Launch the full platform
 # Terminal A (Backend API on :8000):
 make run-backend
 
 # Terminal B (Frontend UI on :5173):
 make run-frontend
 ```
+
+> **Tip (GitHub Rate Limits):** To enable high-rate-limit live web plagiarism checks (up to 30 requests/minute), optionally add your GitHub token to `.env`:
+> ```bash
+> echo "GITHUB_TOKEN=ghp_yourTokenHere" >> .env
+> ```
 
 Alternatively, launch the complete containerized stack using Docker Compose:
 
@@ -126,6 +135,7 @@ flowchart TD
 | **Tier 2: Semantic** | **AST Canonicalization** | Unifies `for`, `while`, and `do-while` into a single `Loop` representation. Expands `+=`, `-=`, `++`, `--`. Flattens redundant single-statement blocks. Sorts commutative operands (`a + b == b + a`). Applies De Morgan's laws. Proved strictly idempotent ($N(N(T)) = N(T)$). |
 | **Tier 2: Semantic** | **Tree Alignment DP** | Recursive bottom-up tree alignment dynamic programming measuring structural similarity ($O(N \cdot M)$). Guarded for trees $> 3000$ nodes. |
 | **Tier 2: Semantic** | **Merkle Subtree Hashing** | Computes deterministic bottom-up cryptographic hashes of canonical AST subtrees to pinpoint cloned code fragments. |
+| **Tier 3: Live Web** | **GitHub Candidate Retrieval** | Extracts 2–4 high-entropy search signatures, queries the GitHub Code Search REST API in real time, buffers decoded source in-memory, evaluates candidate files against token and logic similarity pipelines, and caches responses in SQLite with a 35% threshold. |
 
 ---
 
@@ -164,7 +174,7 @@ string_reverse   | O: 1.00 (L:1.00) | O: 0.88 (L:0.80) | O: 0.59 (L:0.76) | O: 0
 
 ## 🧪 Automated Test Suite
 
-Run all 75 automated pytest unit and integration tests:
+Run all 85 automated pytest unit and integration tests:
 
 ```bash
 make test
@@ -178,7 +188,8 @@ make test
 - `test_winnowing.py`: Hash determinism, whitespace insensitivity, renamed identifier robustness.
 - `test_py_converter.py` & `test_java_converter.py`: Compilation and bit-for-bit execution matching reference interpreters.
 - `test_sandbox.py`: Security stress tests (infinite loops, memory bombs, 64 KB stdout capping, restricted file system access).
-- `test_api.py`: FastAPI endpoint integration tests.
+- `test_web_retrieval.py`: Shannon entropy signature extraction, generic fallback, GitHub Code Search client with rate limits, in-memory decoding, SQLite caching, and threshold filtering.
+- `test_api.py`: FastAPI endpoint integration tests (`/api/run`, `/api/analyze`, `/api/plagiarism/check`).
 
 ---
 
@@ -209,8 +220,13 @@ cdproj/
 │   │   │   ├── java_expr_parser.py# Java expression parser
 │   │   │   ├── java_to_ir.py      # Java to Universal IR lowering
 │   │   │   └── converter.py       # Unified source-to-C converter
+│   │   ├── retrieval/         # Live web candidate retrieval & GitHub Code Search
+│   │   │   ├── signature_extractor.py  # High-entropy token & signature extraction
+│   │   │   ├── web_retriever.py        # GitHub REST Code Search API client & cache
+│   │   │   └── web_plagiarism_runner.py# Async candidate verification engine
 │   │   ├── execution/         # Sandboxed execution environment
 │   │   │   └── sandbox.py         # Docker / setrlimit process supervisor
+│   │   ├── seed_data.py       # Mock database submission seeder
 │   │   ├── demo.py            # Scripted end-to-end demonstration
 │   │   └── main.py            # FastAPI entry point
 │   └── requirements.txt       # Python dependencies
@@ -231,7 +247,7 @@ cdproj/
 ├── docs/                      # Technical design & documentation
 │   ├── architecture.md        # Deep architectural design document
 │   └── limitations.md         # Explicit language subset specifications
-├── tests/                     # 75 unit, integration, and matrix tests
+├── tests/                     # 85 unit, integration, and matrix tests
 │   ├── corpus/                # 8 algorithm families (32 source files)
 │   └── test_*.py              # Comprehensive test suites
 ├── docker-compose.yml         # Container orchestration
@@ -246,11 +262,13 @@ cdproj/
 | Command | Action |
 | :--- | :--- |
 | `make demo` | Runs the end-to-end scripted pipeline demonstration |
-| `make test` | Runs the full 75-test automated pytest suite |
+| `make seed` | Populates database with 8 diverse algorithmic submissions |
+| `make test` | Runs the full 85-test automated pytest suite |
 | `make matrix` | Executes the 8-problem-family corpus similarity matrix |
 | `make run-backend` | Launches FastAPI backend on `http://localhost:8000` |
 | `make run-frontend` | Launches Vite React frontend dev server on `http://localhost:5173` |
 | `make build-frontend` | Builds production-optimized frontend bundle (`dist/`) |
+| `make build-sandbox` | Builds Alpine Docker sandbox image (`codeguard-sandbox:latest`) |
 | `make install` | Configures `.venv` and installs all Python & npm dependencies |
 | `make clean` | Removes cache, bytecode, and build artifacts |
 
