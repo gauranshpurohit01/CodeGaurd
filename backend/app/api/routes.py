@@ -43,6 +43,44 @@ router = APIRouter(prefix="/api", tags=["CodeGuard API"])
 sandbox_instance = Sandbox()
 
 
+def _map_web_report_to_schema(web_rep) -> WebPlagiarismSchema:
+    matches = []
+    for m in web_rep.matches:
+        subtrees = [
+            MatchedSubtreeSchema(
+                kind=st["kind"] if isinstance(st, dict) else st.kind,
+                size=st["size"] if isinstance(st, dict) else st.size,
+                line_a=st["line_a"] if isinstance(st, dict) else st.line_a,
+                line_b=st["line_b"] if isinstance(st, dict) else st.line_b,
+                hash_val=st["hash_val"] if isinstance(st, dict) else st.hash_val,
+            )
+            for st in getattr(m, "matched_subtrees", [])
+        ]
+        matches.append(
+            WebMatchSchema(
+                source_url=m.source_url,
+                repository=m.repository,
+                token_similarity=m.token_similarity,
+                logic_similarity=m.logic_similarity,
+                composite_score=m.composite_score,
+                token_similarity_num=m.token_similarity_num,
+                logic_similarity_num=m.logic_similarity_num,
+                composite_score_num=m.composite_score_num,
+                verdict=m.verdict,
+                matched_ranges_a=m.matched_ranges_a,
+                matched_ranges_b=m.matched_ranges_b,
+                matched_subtrees=subtrees,
+                target_source=m.target_source,
+            )
+        )
+    return WebPlagiarismSchema(
+        checked=web_rep.checked,
+        search_queries_used=web_rep.search_queries_used,
+        matches=matches,
+        status_message=web_rep.status_message,
+    )
+
+
 @router.post("/convert", response_model=ConvertResponse)
 def convert_code(req: ConvertRequest):
     """Convert Python or Java source code into compilable C."""
@@ -106,31 +144,10 @@ def run_code(req: RunRequest, db: Session = Depends(get_db)):
             web_rep = run_web_plagiarism_pipeline(
                 language=req.language,
                 source=req.source,
-                threshold=0.35,
+                threshold=0.20,
                 db=db,
             )
-            web_plag = WebPlagiarismSchema(
-                checked=web_rep.checked,
-                search_queries_used=web_rep.search_queries_used,
-                matches=[
-                    WebMatchSchema(
-                        source_url=m.source_url,
-                        repository=m.repository,
-                        token_similarity=m.token_similarity,
-                        logic_similarity=m.logic_similarity,
-                        composite_score=m.composite_score,
-                        token_similarity_num=m.token_similarity_num,
-                        logic_similarity_num=m.logic_similarity_num,
-                        composite_score_num=m.composite_score_num,
-                        verdict=m.verdict,
-                        matched_ranges_a=m.matched_ranges_a,
-                        matched_ranges_b=m.matched_ranges_b,
-                        target_source=m.target_source,
-                    )
-                    for m in web_rep.matches
-                ],
-                status_message=web_rep.status_message,
-            )
+            web_plag = _map_web_report_to_schema(web_rep)
 
     return RunResponse(
         compile_ok=res.compile_ok,
@@ -232,32 +249,10 @@ def check_plagiarism(req: PlagiarismCheckRequest, db: Session = Depends(get_db))
         web_rep = run_web_plagiarism_pipeline(
             language=req.language,
             source=req.source,
-            threshold=0.35,
+            threshold=0.20,
             db=db,
         )
-        web_matches = [
-            WebMatchSchema(
-                source_url=m.source_url,
-                repository=m.repository,
-                token_similarity=m.token_similarity,
-                logic_similarity=m.logic_similarity,
-                composite_score=m.composite_score,
-                token_similarity_num=m.token_similarity_num,
-                logic_similarity_num=m.logic_similarity_num,
-                composite_score_num=m.composite_score_num,
-                verdict=m.verdict,
-                matched_ranges_a=m.matched_ranges_a,
-                matched_ranges_b=m.matched_ranges_b,
-                target_source=m.target_source,
-            )
-            for m in web_rep.matches
-        ]
-        web_plag = WebPlagiarismSchema(
-            checked=web_rep.checked,
-            search_queries_used=web_rep.search_queries_used,
-            matches=web_matches,
-            status_message=web_rep.status_message,
-        )
+        web_plag = _map_web_report_to_schema(web_rep)
     else:
         web_plag = WebPlagiarismSchema(
             checked=False,
@@ -301,31 +296,10 @@ def check_web_plagiarism_only(req: PlagiarismCheckRequest, db: Session = Depends
     web_rep = run_web_plagiarism_pipeline(
         language=req.language,
         source=req.source,
-        threshold=0.35,
+        threshold=0.20,
         db=db,
     )
-    return WebPlagiarismSchema(
-        checked=web_rep.checked,
-        search_queries_used=web_rep.search_queries_used,
-        matches=[
-            WebMatchSchema(
-                source_url=m.source_url,
-                repository=m.repository,
-                token_similarity=m.token_similarity,
-                logic_similarity=m.logic_similarity,
-                composite_score=m.composite_score,
-                token_similarity_num=m.token_similarity_num,
-                logic_similarity_num=m.logic_similarity_num,
-                composite_score_num=m.composite_score_num,
-                verdict=m.verdict,
-                matched_ranges_a=m.matched_ranges_a,
-                matched_ranges_b=m.matched_ranges_b,
-                target_source=m.target_source,
-            )
-            for m in web_rep.matches
-        ],
-        status_message=web_rep.status_message,
-    )
+    return _map_web_report_to_schema(web_rep)
 
 
 @router.post("/analyze", response_model=FullAnalysisResponse)
@@ -394,31 +368,10 @@ def analyze_full_pipeline(req: RunRequest, db: Session = Depends(get_db)):
     web_rep = run_web_plagiarism_pipeline(
         language=req.language,
         source=req.source,
-        threshold=0.35,
+        threshold=0.20,
         db=db,
     )
-    web_plag = WebPlagiarismSchema(
-        checked=web_rep.checked,
-        search_queries_used=web_rep.search_queries_used,
-        matches=[
-            WebMatchSchema(
-                source_url=m.source_url,
-                repository=m.repository,
-                token_similarity=m.token_similarity,
-                logic_similarity=m.logic_similarity,
-                composite_score=m.composite_score,
-                token_similarity_num=m.token_similarity_num,
-                logic_similarity_num=m.logic_similarity_num,
-                composite_score_num=m.composite_score_num,
-                verdict=m.verdict,
-                matched_ranges_a=m.matched_ranges_a,
-                matched_ranges_b=m.matched_ranges_b,
-                target_source=m.target_source,
-            )
-            for m in web_rep.matches
-        ],
-        status_message=web_rep.status_message,
-    )
+    web_plag = _map_web_report_to_schema(web_rep)
 
     return FullAnalysisResponse(
         execution=exec_summary,

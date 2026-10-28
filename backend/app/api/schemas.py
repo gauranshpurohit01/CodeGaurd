@@ -17,6 +17,14 @@ class ConvertResponse(BaseModel):
     success: bool = True
 
 
+class MatchedSubtreeSchema(BaseModel):
+    kind: str
+    size: int
+    line_a: int
+    line_b: int
+    hash_val: int
+
+
 class WebMatchSchema(BaseModel):
     source_url: str
     repository: str
@@ -29,6 +37,7 @@ class WebMatchSchema(BaseModel):
     verdict: Optional[str] = None
     matched_ranges_a: List[Tuple[int, int]] = []
     matched_ranges_b: List[Tuple[int, int]] = []
+    matched_subtrees: List[MatchedSubtreeSchema] = []
     target_source: Optional[str] = None
 
 
@@ -90,13 +99,6 @@ class RunResponse(BaseModel):
     local_plagiarism: Optional[LocalPlagiarismSchema] = None
     web_plagiarism: Optional[WebPlagiarismSchema] = None
 
-
-class MatchedSubtreeSchema(BaseModel):
-    kind: str
-    size: int
-    line_a: int
-    line_b: int
-    hash_val: int
 
 
 class MatchReport(BaseModel):

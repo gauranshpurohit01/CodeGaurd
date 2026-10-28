@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { AlertCircle, CheckCircle2, ShieldAlert, FileCode2, Layers, GitCompare, ArrowRightLeft, Sparkles, Globe, ExternalLink } from 'lucide-react';
-import { MatchReport, SupportedLanguage, WebPlagiarismResult, WebMatch } from '../types';
+import { AlertCircle, CheckCircle2, ShieldAlert, FileCode2, Layers, GitCompare, ArrowRightLeft, Sparkles, Globe, ExternalLink, Database } from 'lucide-react';
+import { MatchReport, SupportedLanguage, WebPlagiarismResult } from '../types';
 
 interface ReportViewProps {
   reports: MatchReport[];
@@ -9,9 +9,21 @@ interface ReportViewProps {
   onCustomCompare?: (rep: MatchReport, codeA: string) => void;
 }
 
+type ActiveSourceTab = 'web' | 'local' | 'custom';
+
 export const ReportView: React.FC<ReportViewProps> = ({ reports, querySource, webPlagiarism, onCustomCompare }) => {
-  const [selectedMatchIndex, setSelectedMatchIndex] = useState(0);
-  const [showDirectCompare, setShowDirectCompare] = useState(reports.length === 0);
+  // Check if web plagiarism returned matches
+  const hasWebMatches = !!(webPlagiarism && webPlagiarism.matches && webPlagiarism.matches.length > 0);
+
+  // Default to 'web' if internet candidates exist, else 'local', else 'custom'
+  const [activeSourceTab, setActiveSourceTab] = useState<ActiveSourceTab>(() => {
+    if (hasWebMatches) return 'web';
+    if (reports.length > 0) return 'local';
+    return 'custom';
+  });
+
+  const [selectedWebMatchIndex, setSelectedWebMatchIndex] = useState(0);
+  const [selectedLocalMatchIndex, setSelectedLocalMatchIndex] = useState(0);
 
   // Direct compare form states
   const [customCodeA, setCustomCodeA] = useState(querySource || `// Code A (e.g. C)
@@ -46,60 +58,50 @@ def main() -> int:
   const [customLangB, setCustomLangB] = useState<SupportedLanguage>('python');
   const [isComparing, setIsComparing] = useState(false);
   const [compareError, setCompareError] = useState<string | null>(null);
+  const [customMatch, setCustomMatch] = useState<MatchReport | null>(null);
 
-  const [activeReports, setActiveReports] = useState<MatchReport[]>(reports);
   const [activeQuerySource, setActiveQuerySource] = useState<string>(querySource);
 
-  // Sync with prop updates if they change
+  // Automatically select 'web' if webPlagiarism yields results
   React.useEffect(() => {
-    if (reports.length > 0) {
-      setActiveReports(reports);
-      setShowDirectCompare(false);
-    } else if (webPlagiarism && webPlagiarism.matches && webPlagiarism.matches.length > 0) {
-      const top = webPlagiarism.matches[0];
-      const tokSim = (top.token_similarity_num != null ? top.token_similarity_num : parseFloat(top.token_similarity || '0')) / 100;
-      const rep: MatchReport = {
-        submission_id: undefined,
-        title: `GitHub: ${top.repository}`,
-        overall_similarity: (top.composite_score_num != null ? top.composite_score_num : parseFloat(top.composite_score || '0')) / 100,
-        token_similarity: tokSim,
-        token_containment_a: tokSim,
-        token_containment_b: tokSim,
-        logic_similarity: (top.logic_similarity_num != null ? top.logic_similarity_num : parseFloat(top.logic_similarity || '0')) / 100,
-        matched_ranges_a: top.matched_ranges_a || [],
-        matched_ranges_b: top.matched_ranges_b || [],
-        matched_subtrees: [],
-        verdict: top.verdict || ((top.composite_score_num || parseFloat(top.composite_score || '0')) >= 70 ? 'likely copied' : 'suspicious'),
-        target_source: top.target_source || '',
-      };
-      setActiveReports([rep]);
-      setShowDirectCompare(false);
-    } else {
-      setActiveReports(reports);
+    if (webPlagiarism && webPlagiarism.matches && webPlagiarism.matches.length > 0) {
+      setActiveSourceTab('web');
+      setSelectedWebMatchIndex(0);
+    } else if (reports.length > 0) {
+      setActiveSourceTab('local');
+      setSelectedLocalMatchIndex(0);
     }
     setActiveQuerySource(querySource);
   }, [reports, querySource, webPlagiarism]);
 
-  const handleSelectWebMatch = (wm: WebMatch) => {
-    const tokSim = (wm.token_similarity_num != null ? wm.token_similarity_num : parseFloat(wm.token_similarity || '0')) / 100;
-    const rep: MatchReport = {
+  // Convert web matches into normalized MatchReport structures
+  const webReports: MatchReport[] = (webPlagiarism?.matches || []).map((m) => {
+    const tokSim = m.token_similarity_num != null
+      ? m.token_similarity_num
+      : parseFloat(m.token_similarity || '0') / 100;
+    const compScore = m.composite_score_num != null
+      ? m.composite_score_num
+      : parseFloat(m.composite_score || '0') / 100;
+    const logSim = m.logic_similarity_num != null
+      ? m.logic_similarity_num
+      : parseFloat(m.logic_similarity || '0') / 100;
+
+    return {
       submission_id: undefined,
-      title: `GitHub: ${wm.repository}`,
-      overall_similarity: (wm.composite_score_num != null ? wm.composite_score_num : parseFloat(wm.composite_score || '0')) / 100,
+      title: m.repository,
+      source_url: m.source_url,
+      overall_similarity: compScore,
       token_similarity: tokSim,
       token_containment_a: tokSim,
       token_containment_b: tokSim,
-      logic_similarity: (wm.logic_similarity_num != null ? wm.logic_similarity_num : parseFloat(wm.logic_similarity || '0')) / 100,
-      matched_ranges_a: wm.matched_ranges_a || [],
-      matched_ranges_b: wm.matched_ranges_b || [],
-      matched_subtrees: [],
-      verdict: wm.verdict || ((wm.composite_score_num || parseFloat(wm.composite_score || '0')) >= 70 ? 'likely copied' : 'suspicious'),
-      target_source: wm.target_source || `// Candidate source from ${wm.source_url}\n// (Full source fetched via GitHub Code Search API)`,
+      logic_similarity: logSim,
+      matched_ranges_a: m.matched_ranges_a || [],
+      matched_ranges_b: m.matched_ranges_b || [],
+      matched_subtrees: m.matched_subtrees || [],
+      verdict: m.verdict || (compScore >= 0.70 ? 'likely copied' : compScore >= 0.40 ? 'suspicious' : 'low'),
+      target_source: m.target_source || `// Candidate source from ${m.source_url}\n// (Full source fetched via GitHub API)`,
     };
-    setActiveReports([rep, ...activeReports.filter((r) => r.title !== rep.title)]);
-    setSelectedMatchIndex(0);
-    setShowDirectCompare(false);
-  };
+  });
 
   const handleRunDirectCompare = async () => {
     setIsComparing(true);
@@ -122,10 +124,9 @@ def main() -> int:
       const data: MatchReport = await resp.json();
       data.title = `Custom Code B (${customLangB.toUpperCase()})`;
       data.target_source = customCodeB;
-      setActiveReports([data]);
+      setCustomMatch(data);
       setActiveQuerySource(customCodeA);
-      setSelectedMatchIndex(0);
-      setShowDirectCompare(false);
+      setActiveSourceTab('custom');
       if (onCustomCompare) {
         onCustomCompare(data, customCodeA);
       }
@@ -136,7 +137,26 @@ def main() -> int:
     }
   };
 
-  const match = activeReports[selectedMatchIndex] || activeReports[0];
+  // Determine currently active match depending on active tab
+  let currentReports: MatchReport[] = [];
+  let currentIndex = 0;
+  let onSelectIndex = (idx: number) => {};
+
+  if (activeSourceTab === 'web') {
+    currentReports = webReports;
+    currentIndex = selectedWebMatchIndex;
+    onSelectIndex = setSelectedWebMatchIndex;
+  } else if (activeSourceTab === 'local') {
+    currentReports = reports;
+    currentIndex = selectedLocalMatchIndex;
+    onSelectIndex = setSelectedLocalMatchIndex;
+  } else if (activeSourceTab === 'custom') {
+    currentReports = customMatch ? [customMatch] : [];
+    currentIndex = 0;
+    onSelectIndex = () => {};
+  }
+
+  const match = currentReports[currentIndex] || currentReports[0];
 
   const getVerdictBadge = (verdict: string) => {
     switch (verdict) {
@@ -166,29 +186,126 @@ def main() -> int:
 
   return (
     <div className="flex-1 max-w-7xl mx-auto w-full p-4 flex flex-col gap-6">
-      {/* Top Controls Bar */}
-      <div className="flex items-center justify-between bg-slate-900 border border-slate-800 rounded-xl p-3 shadow-sm">
-        <div className="flex items-center space-x-3">
-          <div className="h-9 w-9 bg-rose-500/10 border border-rose-500/20 text-rose-400 rounded-lg flex items-center justify-center">
-            <ShieldAlert className="h-5 w-5" />
-          </div>
-          <div>
-            <h2 className="text-sm font-bold text-slate-100">Semantic & Token Plagiarism Inspection</h2>
-            <p className="text-xs text-slate-400">Two-tier detection: Winnowing (token-level) & Canonical AST alignment (logic-level)</p>
-          </div>
+      {/* Top Source Switcher Navigation Bar */}
+      <div className="flex flex-wrap items-center justify-between gap-3 bg-slate-900 border border-slate-800 rounded-xl p-3.5 shadow-sm">
+        {/* Toggle Mode Buttons */}
+        <div className="flex flex-wrap items-center gap-1.5 bg-slate-950 p-1.5 rounded-lg border border-slate-800">
+          <button
+            onClick={() => setActiveSourceTab('web')}
+            className={`flex items-center space-x-2 px-3.5 py-2 rounded-lg text-xs font-bold transition-all ${
+              activeSourceTab === 'web'
+                ? 'bg-gradient-to-r from-cyan-600 to-blue-600 text-white shadow-md shadow-cyan-500/25 ring-1 ring-cyan-400'
+                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
+            }`}
+          >
+            <Globe className="h-4 w-4 text-cyan-300" />
+            <span>🌐 Open-Source (GitHub) Matches</span>
+            <span
+              className={`px-2 py-0.5 rounded-full text-[11px] font-mono font-bold ${
+                activeSourceTab === 'web' ? 'bg-cyan-950 text-cyan-200 border border-cyan-400/40' : 'bg-slate-800 text-slate-300'
+              }`}
+            >
+              {webReports.length}
+            </span>
+          </button>
+
+          <button
+            onClick={() => setActiveSourceTab('local')}
+            className={`flex items-center space-x-2 px-3.5 py-2 rounded-lg text-xs font-bold transition-all ${
+              activeSourceTab === 'local'
+                ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-md shadow-emerald-500/25 ring-1 ring-emerald-400'
+                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
+            }`}
+          >
+            <Database className="h-4 w-4 text-emerald-300" />
+            <span>📁 Local Submissions Database</span>
+            <span
+              className={`px-2 py-0.5 rounded-full text-[11px] font-mono font-bold ${
+                activeSourceTab === 'local' ? 'bg-emerald-950 text-emerald-200 border border-emerald-400/40' : 'bg-slate-800 text-slate-300'
+              }`}
+            >
+              {reports.length}
+            </span>
+          </button>
+
+          <button
+            onClick={() => setActiveSourceTab('custom')}
+            className={`flex items-center space-x-2 px-3.5 py-2 rounded-lg text-xs font-bold transition-all ${
+              activeSourceTab === 'custom'
+                ? 'bg-slate-800 text-cyan-300 border border-cyan-500/60 shadow-sm'
+                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
+            }`}
+          >
+            <GitCompare className="h-4 w-4" />
+            <span>⚡ Direct 2-Snippet Compare</span>
+          </button>
         </div>
 
-        <button
-          onClick={() => setShowDirectCompare(!showDirectCompare)}
-          className="flex items-center space-x-2 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
-        >
-          <GitCompare className="h-3.5 w-3.5 text-cyan-400" />
-          <span>{showDirectCompare ? 'Hide Custom Compare' : 'Direct Compare 2 Custom Snippets'}</span>
-        </button>
+        {/* Mode Description Tag */}
+        <div className="flex items-center space-x-2">
+          {activeSourceTab === 'web' && (
+            <span className="text-xs font-mono text-cyan-300 bg-cyan-950/70 border border-cyan-800/80 px-3 py-1.5 rounded-lg flex items-center gap-2">
+              <span className="h-2 w-2 rounded-full bg-cyan-400 animate-pulse" />
+              <span>Target: Public GitHub Code Search & TheAlgorithms / GeeksforGeeks Archive</span>
+            </span>
+          )}
+          {activeSourceTab === 'local' && (
+            <span className="text-xs font-mono text-emerald-300 bg-emerald-950/70 border border-emerald-800/80 px-3 py-1.5 rounded-lg flex items-center gap-2">
+              <span className="h-2 w-2 rounded-full bg-emerald-400" />
+              <span>Target: Classroom Assignment SQLite Database Submissions</span>
+            </span>
+          )}
+          {activeSourceTab === 'custom' && (
+            <span className="text-xs font-mono text-amber-300 bg-amber-950/70 border border-amber-800/80 px-3 py-1.5 rounded-lg">
+              Direct Two-Source Cross-Language Inspection
+            </span>
+          )}
+        </div>
       </div>
 
-      {/* Direct Compare Input Form (Collapsible / Default if no reports) */}
-      {showDirectCompare && (
+      {/* WEB MODE HEADER: Signatures & Search Status */}
+      {activeSourceTab === 'web' && webPlagiarism && (
+        <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-sm flex flex-col gap-3">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 pb-3">
+            <div className="flex items-center space-x-2.5">
+              <div className="h-9 w-9 bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 rounded-lg flex items-center justify-center">
+                <Globe className="h-5 w-5" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-slate-100 flex items-center gap-2">
+                  <span>Live Internet (GitHub) Plagiarism Search</span>
+                  <span className="text-[11px] bg-cyan-950 text-cyan-300 border border-cyan-800 px-2 py-0.5 rounded-full font-mono">
+                    {webReports.length} candidate{webReports.length === 1 ? '' : 's'} identified
+                  </span>
+                </h3>
+                <p className="text-xs text-slate-400">
+                  {webPlagiarism.status_message || 'Analyzed distinctive high-entropy signatures against public open-source repositories.'}
+                </p>
+              </div>
+            </div>
+
+            {webPlagiarism.search_queries_used && webPlagiarism.search_queries_used.length > 0 && (
+              <div className="flex flex-wrap items-center gap-1.5 text-xs text-slate-400">
+                <span className="font-semibold text-slate-500 uppercase tracking-wider text-[10px]">Queried Signatures:</span>
+                {webPlagiarism.search_queries_used.map((q, idx) => (
+                  <span key={idx} className="bg-slate-950 border border-slate-800 text-cyan-300 font-mono text-xs px-2.5 py-1 rounded">
+                    {q}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {webReports.length === 0 && (
+            <div className="text-xs text-slate-400 italic py-2">
+              No matching open-source candidate files met or exceeded the 20% similarity threshold. You can also view the local database submissions using the tabs above.
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* DIRECT COMPARE FORM (Visible when in custom mode) */}
+      {activeSourceTab === 'custom' && (
         <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-sm flex flex-col gap-4">
           <div className="flex items-center justify-between border-b border-slate-800 pb-3">
             <div className="flex items-center space-x-2 text-sm font-bold text-slate-200">
@@ -267,117 +384,30 @@ def main() -> int:
         </div>
       )}
 
-      {/* Live GitHub / Web Candidates Section */}
-      {webPlagiarism && webPlagiarism.checked && (
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-sm flex flex-col gap-3.5">
-          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-3">
-            <div className="flex items-center space-x-2.5">
-              <div className="h-8 w-8 bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 rounded-lg flex items-center justify-center">
-                <Globe className="h-4 w-4" />
-              </div>
-              <div>
-                <div className="flex items-center space-x-2">
-                  <span className="text-sm font-bold text-slate-100">Live Open-Source (GitHub) Candidate Retrieval</span>
-                  <span className="text-[11px] bg-slate-800 text-slate-300 border border-slate-700 px-2 py-0.5 rounded-full font-mono">
-                    {webPlagiarism.matches.length} candidate{webPlagiarism.matches.length === 1 ? '' : 's'} found
-                  </span>
-                </div>
-                <p className="text-xs text-slate-400">High-entropy code signatures queried against the GitHub Code Search API</p>
-              </div>
-            </div>
-
-            {webPlagiarism.search_queries_used && webPlagiarism.search_queries_used.length > 0 && (
-              <div className="flex flex-wrap items-center gap-1.5 text-xs text-slate-400">
-                <span className="font-semibold text-slate-500 uppercase tracking-wider text-[10px]">Signatures:</span>
-                {webPlagiarism.search_queries_used.map((q, idx) => (
-                  <span key={idx} className="bg-slate-950 border border-slate-800 text-cyan-300 font-mono text-[11px] px-2 py-0.5 rounded">
-                    {q}
-                  </span>
-                ))}
-              </div>
-            )}
+      {/* NO MATCHES FALLBACK FOR ACTIVE MODE */}
+      {currentReports.length === 0 && activeSourceTab !== 'custom' && (
+        <div className="bg-slate-900 border border-slate-800 rounded-xl p-8 flex flex-col items-center justify-center text-center">
+          <div className="h-14 w-14 bg-slate-800 rounded-full flex items-center justify-center mb-3 text-slate-500">
+            {activeSourceTab === 'web' ? <Globe className="h-7 w-7 text-cyan-400" /> : <ShieldAlert className="h-7 w-7 text-emerald-400" />}
           </div>
-
-          {webPlagiarism.status_message && (
-            <p className="text-xs text-slate-400 italic">
-              {webPlagiarism.status_message}
-            </p>
-          )}
-
-          {webPlagiarism.matches.length > 0 ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 pt-1">
-              {webPlagiarism.matches.map((m, idx) => (
-                <div
-                  key={idx}
-                  className="bg-slate-950 border border-slate-800 hover:border-slate-700 rounded-lg p-3.5 flex flex-col justify-between gap-3 transition-colors shadow-sm"
-                >
-                  <div>
-                    <div className="flex items-center justify-between gap-2 mb-2">
-                      <a
-                        href={m.source_url}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-xs font-bold text-cyan-400 hover:underline flex items-center gap-1.5 truncate"
-                        title={m.source_url}
-                      >
-                        <span className="truncate">{m.repository}</span>
-                        <ExternalLink className="h-3 w-3 shrink-0" />
-                      </a>
-                      <span className="px-2 py-0.5 rounded text-[11px] font-extrabold text-slate-950 bg-rose-400 shrink-0">
-                        {m.composite_score}
-                      </span>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-2 mt-2 text-[11px] font-mono">
-                      <div className="bg-slate-900 border border-slate-800/80 rounded p-1.5">
-                        <span className="text-slate-500 block text-[9px] uppercase">Token Sim</span>
-                        <span className="text-cyan-400 font-bold">{m.token_similarity}</span>
-                      </div>
-                      <div className="bg-slate-900 border border-slate-800/80 rounded p-1.5">
-                        <span className="text-slate-500 block text-[9px] uppercase">Logic Sim</span>
-                        <span className="text-indigo-400 font-bold">{m.logic_similarity}</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <button
-                    onClick={() => handleSelectWebMatch(m)}
-                    className="w-full flex items-center justify-center space-x-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 hover:border-cyan-500/50 py-1.5 px-3 rounded text-xs font-semibold transition-all"
-                  >
-                    <GitCompare className="h-3.5 w-3.5 text-cyan-400" />
-                    <span>Inspect Side-by-Side Diff</span>
-                  </button>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="text-xs text-slate-500 italic py-1">
-              No open-source candidate files met or exceeded the 35% similarity threshold.
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* No Reports Fallback */}
-      {(!activeReports || activeReports.length === 0) && !showDirectCompare && (!webPlagiarism || !webPlagiarism.checked) && (
-        <div className="flex-1 max-w-7xl mx-auto w-full p-8 flex flex-col items-center justify-center text-center">
-          <div className="h-16 w-16 bg-slate-800 rounded-full flex items-center justify-center mb-4 text-slate-500">
-            <ShieldAlert className="h-8 w-8" />
-          </div>
-          <h2 className="text-xl font-bold text-slate-200">No Plagiarism Report Loaded</h2>
-          <p className="text-sm text-slate-400 mt-2 max-w-md">
-            Click <span className="text-cyan-400 font-semibold">"Direct Compare 2 Custom Snippets"</span> above or go to the Editor tab to check code against the database.
+          <h3 className="text-base font-bold text-slate-200">
+            {activeSourceTab === 'web' ? 'No Live Open-Source (GitHub) Matches' : 'No Local Database Submissions'}
+          </h3>
+          <p className="text-xs text-slate-400 mt-1.5 max-w-md">
+            {activeSourceTab === 'web'
+              ? 'No public open-source candidates exceeded similarity thresholds. You can switch to the Local Submissions Database tab above.'
+              : 'The local submissions database does not contain any records for comparison.'}
           </p>
         </div>
       )}
 
-      {/* Report Dashboard */}
-      {activeReports && activeReports.length > 0 && match && (
+      {/* DASHBOARD: OVERVIEW CARDS & CANDIDATE SELECTOR & DIFF VIEWER */}
+      {currentReports.length > 0 && match && (
         <>
           {/* Top Overview Cards */}
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             {/* Overall Score */}
-            <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 flex flex-col justify-between">
+            <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 flex flex-col justify-between shadow-sm">
               <div className="flex justify-between items-start">
                 <span className="text-xs text-slate-400 font-semibold uppercase tracking-wider">Overall Match</span>
                 {getVerdictBadge(match.verdict)}
@@ -391,9 +421,9 @@ def main() -> int:
               <div className="w-full bg-slate-950 h-2 rounded-full mt-3 overflow-hidden">
                 <div
                   className={`h-full rounded-full transition-all duration-500 ${
-                    match.overall_similarity >= 0.75
+                    match.overall_similarity >= 0.70
                       ? 'bg-rose-500'
-                      : match.overall_similarity >= 0.5
+                      : match.overall_similarity >= 0.40
                       ? 'bg-amber-500'
                       : 'bg-emerald-500'
                   }`}
@@ -403,7 +433,7 @@ def main() -> int:
             </div>
 
             {/* Token Similarity */}
-            <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 flex flex-col justify-between">
+            <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 flex flex-col justify-between shadow-sm">
               <div className="flex justify-between items-start">
                 <span className="text-xs text-slate-400 font-semibold uppercase tracking-wider">Token Level</span>
                 <span className="text-xs text-cyan-400 font-mono">Winnowing (K=5, W=4)</span>
@@ -423,7 +453,7 @@ def main() -> int:
             </div>
 
             {/* Logic Similarity */}
-            <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 flex flex-col justify-between">
+            <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 flex flex-col justify-between shadow-sm">
               <div className="flex justify-between items-start">
                 <span className="text-xs text-slate-400 font-semibold uppercase tracking-wider">Logic Level</span>
                 <span className="text-xs text-indigo-400 font-mono">AST Tree Alignment</span>
@@ -442,39 +472,73 @@ def main() -> int:
               </div>
             </div>
 
-            {/* Matched Subtrees Count */}
-            <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 flex flex-col justify-between">
+            {/* Target Source Info Card */}
+            <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 flex flex-col justify-between shadow-sm">
               <div className="flex justify-between items-start">
-                <span className="text-xs text-slate-400 font-semibold uppercase tracking-wider">Merkle Subtrees</span>
-                <Layers className="h-4 w-4 text-emerald-400" />
+                <span className="text-xs text-slate-400 font-semibold uppercase tracking-wider">Compared Source</span>
+                {match.source_url ? (
+                  <a
+                    href={match.source_url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="flex items-center space-x-1 text-cyan-400 hover:text-cyan-300 text-xs font-semibold"
+                  >
+                    <span>GitHub</span>
+                    <ExternalLink className="h-3 w-3" />
+                  </a>
+                ) : (
+                  <Layers className="h-4 w-4 text-emerald-400" />
+                )}
               </div>
-              <div className="mt-3 flex items-baseline space-x-2">
-                <span className="text-4xl font-extrabold text-emerald-400">
-                  {match.matched_subtrees.length}
+              <div className="mt-2">
+                <span className="text-sm font-bold text-slate-100 block truncate" title={match.title}>
+                  {match.title || `Submission #${match.submission_id ?? 'Direct'}`}
                 </span>
-                <span className="text-xs text-slate-400">subtrees (size ≥ 3)</span>
+                <span className="text-xs text-slate-400 block mt-0.5">
+                  {match.matched_subtrees?.length || 0} Merkle subtree clones identified
+                </span>
               </div>
-              <p className="text-[11px] text-slate-500 mt-3 truncate">
-                Target: {match.title || `Submission #${match.submission_id ?? 'Direct'}`}
-              </p>
+              {match.source_url ? (
+                <a
+                  href={match.source_url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="mt-2 flex items-center justify-center space-x-1.5 bg-slate-950 hover:bg-slate-800 text-cyan-300 border border-slate-800 hover:border-cyan-500/50 py-1 px-2 rounded text-[11px] font-mono transition-all"
+                >
+                  <ExternalLink className="h-3 w-3" />
+                  <span className="truncate">View Public Repo</span>
+                </a>
+              ) : (
+                <p className="text-[11px] text-slate-500 mt-2 truncate">
+                  Database ID: #{match.submission_id ?? 'Direct'}
+                </p>
+              )}
             </div>
           </div>
 
           {/* Candidate Selector Tabs */}
-          {activeReports.length > 1 && (
+          {currentReports.length > 1 && (
             <div className="flex items-center space-x-2 overflow-x-auto pb-1">
-              <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider mr-2">Top Matches:</span>
-              {activeReports.map((r, i) => (
+              <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider mr-2 shrink-0">
+                {activeSourceTab === 'web' ? 'Internet Candidates:' : 'Database Matches:'}
+              </span>
+              {currentReports.map((r, i) => (
                 <button
                   key={i}
-                  onClick={() => setSelectedMatchIndex(i)}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-all ${
-                    selectedMatchIndex === i
-                      ? 'bg-slate-800 border-emerald-500 text-emerald-400 shadow-sm'
+                  onClick={() => onSelectIndex(i)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-all flex items-center gap-1.5 shrink-0 ${
+                    currentIndex === i
+                      ? activeSourceTab === 'web'
+                        ? 'bg-slate-800 border-cyan-500 text-cyan-300 shadow-sm'
+                        : 'bg-slate-800 border-emerald-500 text-emerald-400 shadow-sm'
                       : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200'
                   }`}
                 >
-                  #{r.submission_id || i + 1} {r.title || 'Target'} ({Math.round(r.overall_similarity * 100)}%)
+                  {activeSourceTab === 'web' && <Globe className="h-3 w-3 shrink-0" />}
+                  <span className="truncate max-w-[200px]">
+                    #{i + 1} {r.title || 'Target'}
+                  </span>
+                  <span className="font-bold">({Math.round(r.overall_similarity * 100)}%)</span>
                 </button>
               ))}
             </div>
@@ -486,19 +550,19 @@ def main() -> int:
             <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden flex flex-col shadow-sm">
               <div className="bg-slate-950 px-4 py-2 border-b border-slate-800 flex justify-between items-center text-xs font-mono">
                 <span className="text-slate-300 font-semibold flex items-center gap-1.5">
-                  <FileCode2 className="h-3.5 w-3.5 text-cyan-400" /> Query Submission (A)
+                  <FileCode2 className="h-3.5 w-3.5 text-cyan-400" /> Query Submission (Your Code)
                 </span>
-                <span className="text-slate-500">{match.matched_ranges_a.length} matched region(s)</span>
+                <span className="text-slate-500">{match.matched_ranges_a?.length || 0} matched region(s)</span>
               </div>
-              <div className="p-3 bg-slate-950 font-mono text-xs overflow-auto max-h-[420px] leading-relaxed">
+              <div className="p-3 bg-slate-950 font-mono text-xs overflow-auto max-h-[440px] leading-relaxed">
                 {(activeQuerySource || '').split('\n').map((line, idx) => {
                   const lineNum = idx + 1;
-                  const isMatched = match.matched_ranges_a.some(([s, e]) => lineNum >= s && lineNum <= e);
+                  const isMatched = (match.matched_ranges_a || []).some(([s, e]) => lineNum >= s && lineNum <= e);
                   return (
                     <div
                       key={idx}
                       className={`flex ${
-                        isMatched ? 'bg-rose-950/40 border-l-2 border-rose-500 text-rose-200' : 'text-slate-400'
+                        isMatched ? 'bg-rose-950/40 border-l-2 border-rose-500 text-rose-200 font-medium' : 'text-slate-400'
                       }`}
                     >
                       <span className="w-10 select-none text-slate-600 text-right pr-3">{lineNum}</span>
@@ -512,21 +576,41 @@ def main() -> int:
             {/* Right: Matched Target Code */}
             <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden flex flex-col shadow-sm">
               <div className="bg-slate-950 px-4 py-2 border-b border-slate-800 flex justify-between items-center text-xs font-mono">
-                <span className="text-slate-300 font-semibold flex items-center gap-1.5">
-                  <FileCode2 className="h-3.5 w-3.5 text-emerald-400" /> Compared Submission (B): {match.title}
+                <span className="text-slate-300 font-semibold flex items-center gap-1.5 truncate max-w-[70%]">
+                  {activeSourceTab === 'web' ? (
+                    <Globe className="h-3.5 w-3.5 text-cyan-400 shrink-0" />
+                  ) : (
+                    <FileCode2 className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
+                  )}
+                  <span className="truncate">
+                    {activeSourceTab === 'web' ? `GitHub Candidate: ${match.title}` : `Target: ${match.title}`}
+                  </span>
                 </span>
-                <span className="text-slate-500">{match.matched_ranges_b.length} matched region(s)</span>
+                <div className="flex items-center space-x-2">
+                  {match.source_url && (
+                    <a
+                      href={match.source_url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-cyan-400 hover:text-cyan-300 flex items-center gap-1 text-[11px]"
+                    >
+                      <span>Open Link</span>
+                      <ExternalLink className="h-3 w-3" />
+                    </a>
+                  )}
+                  <span className="text-slate-500">{match.matched_ranges_b?.length || 0} match(es)</span>
+                </div>
               </div>
-              <div className="p-3 bg-slate-950 font-mono text-xs overflow-auto max-h-[420px] leading-relaxed">
+              <div className="p-3 bg-slate-950 font-mono text-xs overflow-auto max-h-[440px] leading-relaxed">
                 {match.target_source ? (
                   match.target_source.split('\n').map((line, idx) => {
                     const lineNum = idx + 1;
-                    const isMatched = match.matched_ranges_b.some(([s, e]) => lineNum >= s && lineNum <= e);
+                    const isMatched = (match.matched_ranges_b || []).some(([s, e]) => lineNum >= s && lineNum <= e);
                     return (
                       <div
                         key={idx}
                         className={`flex ${
-                          isMatched ? 'bg-emerald-950/40 border-l-2 border-emerald-500 text-emerald-200' : 'text-slate-400'
+                          isMatched ? 'bg-emerald-950/40 border-l-2 border-emerald-500 text-emerald-200 font-medium' : 'text-slate-400'
                         }`}
                       >
                         <span className="w-10 select-none text-slate-600 text-right pr-3">{lineNum}</span>
@@ -549,10 +633,10 @@ def main() -> int:
               <span className="text-slate-300 font-semibold flex items-center gap-1.5">
                 <Layers className="h-3.5 w-3.5 text-indigo-400" /> Identified Maximal Subtree Matches (Merkle Hashes)
               </span>
-              <span className="text-slate-500">{match.matched_subtrees.length} subtree clone(s)</span>
+              <span className="text-slate-500">{match.matched_subtrees?.length || 0} subtree clone(s)</span>
             </div>
             <div className="p-3 overflow-x-auto">
-              {match.matched_subtrees.length > 0 ? (
+              {match.matched_subtrees && match.matched_subtrees.length > 0 ? (
                 <table className="w-full text-left text-xs font-mono">
                   <thead>
                     <tr className="text-slate-500 border-b border-slate-800 pb-2">
@@ -577,7 +661,7 @@ def main() -> int:
                 </table>
               ) : (
                 <div className="text-slate-500 italic p-4 text-center text-xs">
-                  No maximal subtrees &ge; 3 nodes matched. Structural similarity computed via recursive tree alignment.
+                  No maximal subtrees &ge; 3 nodes matched. Structural similarity computed via recursive AST alignment.
                 </div>
               )}
             </div>

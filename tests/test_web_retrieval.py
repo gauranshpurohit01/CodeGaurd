@@ -303,3 +303,56 @@ def test_api_analyze_endpoint():
     assert "Running CodeGuard Full Analysis" in data["execution"]["stdout"]
     assert data["execution"]["exit_code"] == 0
     assert "matches" in data["local_plagiarism"]
+
+
+def test_open_source_archive_fallback():
+    from app.retrieval.web_retriever import search_open_source_archive
+    cands = search_open_source_archive(["is_palindrome", "remainder", "reversed"], "c")
+    assert len(cands) >= 1
+    repos = [c.repository for c in cands]
+    assert any("TheAlgorithms" in r for r in repos)
+    assert any("palindrome" in c.file_name.lower() for c in cands)
+
+
+def test_palindrome_web_plagiarism_detection():
+    palindrome_code = """
+    #include <stdio.h>
+    #include <stdbool.h>
+
+    bool is_palindrome(int n) {
+        int reversed = 0;
+        int remainder = 0;
+        int original = n;
+        while (n > 0) {
+            remainder = n % 10;
+            reversed = reversed * 10 + remainder;
+            n = n / 10;
+        }
+        return original == reversed;
+    }
+
+    int main(void) {
+        int num = 12321;
+        if (is_palindrome(num)) {
+            printf("Palindrome\\n");
+        } else {
+            printf("Not Palindrome\\n");
+        }
+        return 0;
+    }
+    """
+    report = run_web_plagiarism_pipeline(
+        language="c",
+        source=palindrome_code,
+        threshold=0.20,
+    )
+    assert report.checked is True
+    assert len(report.matches) >= 1
+    top_match = report.matches[0]
+    assert "TheAlgorithms" in top_match.repository or "GeeksforGeeks" in top_match.repository
+    assert top_match.composite_score_num >= 0.70
+    assert top_match.verdict in ("likely copied", "suspicious")
+    assert top_match.target_source is not None
+    assert len(top_match.matched_ranges_a) > 0
+    assert len(top_match.matched_ranges_b) > 0
+

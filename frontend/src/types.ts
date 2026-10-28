@@ -26,6 +26,7 @@ export interface WebMatch {
   verdict?: 'low' | 'suspicious' | 'likely copied';
   matched_ranges_a?: [number, number][];
   matched_ranges_b?: [number, number][];
+  matched_subtrees?: MatchedSubtree[];
   target_source?: string;
 }
 
