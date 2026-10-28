@@ -1,4 +1,4 @@
-# CodeGuard 🛡️
+# CodeGaurd
 ### Multi-Language Compiler Construction & Semantic Plagiarism Detection Platform
 
 > **A Compiler Design (CS) Capstone Project**  
