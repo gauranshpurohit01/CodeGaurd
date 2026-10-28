@@ -1,0 +1,21 @@
+services:
+  pharmacy-postgres:
+    image: postgres:16-alpine
+    container_name: pharmacy_dbms_pg
+    environment:
+      POSTGRES_DB: pharmacy_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgrespassword
+    ports:
+      - "5433:5432"
+    volumes:
+      - ./sql:/docker-entrypoint-initdb.d
+      - pharmacy_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d pharmacy_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  pharmacy_pgdata:

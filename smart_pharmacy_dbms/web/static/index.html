@@ -1,0 +1,594 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Smart Pharmacy DBMS | Batch Tracking & Expiry Management</title>
+  <!-- Google Fonts: Inter -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body class="min-h-screen flex flex-col antialiased">
+
+  <!-- Top Navigation Header with Student Project Signature -->
+  <header class="border-b border-[#e9e5f5] sticky top-0 z-50 bg-white shadow-sm">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-2.5 flex items-center justify-between">
+      <div class="flex items-center space-x-3">
+        <div class="w-8 h-8 rounded bg-violet-600 flex items-center justify-center text-white text-sm font-bold shadow-sm">
+          <i class="fa-solid fa-mortar-pestle"></i>
+        </div>
+        <div>
+          <div class="flex items-center gap-2">
+            <h1 class="text-base font-bold tracking-tight text-[#1e1b2e] flex items-center gap-1.5">
+              PharmaBatch <span class="text-violet-600 font-mono text-xs font-semibold">DBMS</span>
+            </h1>
+            <span id="db-engine-badge" class="student-badge">
+              <i class="fa-solid fa-server mr-1"></i> PostgreSQL 16
+            </span>
+          </div>
+          <p class="text-xs text-[#645f78] flex items-center gap-2">
+            <span>DBMS Lab Project</span>
+            <span class="text-[#d5cbef]">&bull;</span>
+            <span class="text-[#1e1b2e] font-medium">Gauransh Purohit</span>
+            <span class="text-[#d5cbef]">&bull;</span>
+            <span class="text-[#847c9b] font-mono text-[11px]">FEFO & Expiry Engine</span>
+          </p>
+        </div>
+      </div>
+
+      <!-- Quick Action Controls -->
+      <div class="flex items-center space-x-2">
+        <button onclick="openVivaModal()" class="btn-viva text-xs">
+          <i class="fa-solid fa-graduation-cap"></i> DBMS Viva Guide
+        </button>
+        <button onclick="triggerQuarantine()" class="btn-danger text-xs">
+          <i class="fa-solid fa-shield-virus"></i> Auto-Quarantine
+        </button>
+        <button onclick="triggerRefreshMV()" class="btn-secondary text-xs">
+          <i class="fa-solid fa-arrows-rotate"></i> Refresh MV
+        </button>
+        <button onclick="triggerResetSeed()" class="btn-primary text-xs">
+          <i class="fa-solid fa-database"></i> Re-Sync Seed
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Navigation Tabs -->
+  <nav class="border-b border-[#e9e5f5] bg-white px-4 sm:px-8 sticky top-14 z-40">
+    <div class="max-w-7xl mx-auto flex space-x-1 sm:space-x-1.5 overflow-x-auto py-1.5">
+      <button onclick="switchTab('dashboard')" id="tab-dashboard" class="nav-tab px-3 py-1.5 rounded text-xs font-semibold text-[#6d28d9] bg-[#ede9fe] border border-[#ddd6fe] transition flex items-center gap-1.5">
+        <i class="fa-solid fa-chart-pie text-violet-600"></i> Dashboard
+      </button>
+      <button onclick="switchTab('radar')" id="tab-radar" class="nav-tab px-3 py-1.5 rounded text-xs font-medium text-[#645f78] hover:text-[#5b21b6] hover:bg-[#f5f3ff] transition flex items-center gap-1.5">
+        <i class="fa-solid fa-triangle-exclamation text-amber-500"></i> Expiry Radar <span id="radar-badge" class="ml-1 text-[10px] px-1.5 py-0.2 rounded bg-red-50 text-red-700 border border-red-200 font-mono">0</span>
+      </button>
+      <button onclick="switchTab('dispense')" id="tab-dispense" class="nav-tab px-3 py-1.5 rounded text-xs font-medium text-[#645f78] hover:text-[#5b21b6] hover:bg-[#f5f3ff] transition flex items-center gap-1.5">
+        <i class="fa-solid fa-cash-register text-cyan-600"></i> FEFO Dispenser
+      </button>
+      <button onclick="switchTab('inventory')" id="tab-inventory" class="nav-tab px-3 py-1.5 rounded text-xs font-medium text-[#645f78] hover:text-[#5b21b6] hover:bg-[#f5f3ff] transition flex items-center gap-1.5">
+        <i class="fa-solid fa-boxes-stacked text-indigo-600"></i> Drug Formulary
+      </button>
+      <button onclick="switchTab('reorder')" id="tab-reorder" class="nav-tab px-3 py-1.5 rounded text-xs font-medium text-[#645f78] hover:text-[#5b21b6] hover:bg-[#f5f3ff] transition flex items-center gap-1.5">
+        <i class="fa-solid fa-cart-shopping text-blue-600"></i> Reorder Shortfall
+      </button>
+      <button onclick="switchTab('recall')" id="tab-recall" class="nav-tab px-3 py-1.5 rounded text-xs font-medium text-[#645f78] hover:text-[#5b21b6] hover:bg-[#f5f3ff] transition flex items-center gap-1.5">
+        <i class="fa-solid fa-magnifying-glass-location text-teal-600"></i> Batch Traceability
+      </button>
+      <button onclick="switchTab('financials')" id="tab-financials" class="nav-tab px-3 py-1.5 rounded text-xs font-medium text-[#645f78] hover:text-[#5b21b6] hover:bg-[#f5f3ff] transition flex items-center gap-1.5">
+        <i class="fa-solid fa-file-invoice-dollar text-emerald-600"></i> Financials (MV)
+      </button>
+      <button onclick="switchTab('audit')" id="tab-audit" class="nav-tab px-3 py-1.5 rounded text-xs font-medium text-[#645f78] hover:text-[#5b21b6] hover:bg-[#f5f3ff] transition flex items-center gap-1.5">
+        <i class="fa-solid fa-clipboard-check text-purple-600"></i> Audit Ledger
+      </button>
+    </div>
+  </nav>
+
+  <!-- Live Notification Toast Banner -->
+  <div id="alert-banner" class="hidden max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-4 transition-all">
+    <div id="alert-box" class="p-3 rounded border flex items-center justify-between text-xs font-medium">
+      <div class="flex items-center space-x-2.5">
+        <i id="alert-icon" class="text-base"></i>
+        <span id="alert-msg"></span>
+      </div>
+      <button onclick="hideAlert()" class="text-[#847c9b] hover:text-[#1e1b2e] p-1"><i class="fa-solid fa-xmark"></i></button>
+    </div>
+  </div>
+
+  <!-- Main Content Container -->
+  <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-5 flex-grow w-full">
+
+    <!-- TAB 1: DASHBOARD -->
+    <section id="view-dashboard" class="space-y-5">
+      <!-- KPI Metric Cards -->
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
+        <div class="card-panel p-4">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-medium text-[#645f78]">Drug Formulary</span>
+            <i class="fa-solid fa-pills text-violet-500 text-sm"></i>
+          </div>
+          <div class="mt-2 flex items-baseline">
+            <span id="kpi-total-meds" class="text-2xl font-bold text-[#1e1b2e] tracking-tight">20</span>
+            <span class="ml-1.5 text-xs text-[#645f78]">drugs</span>
+          </div>
+          <p class="mt-1 text-xs text-[#847c9b]">Across 8 therapeutic categories</p>
+        </div>
+
+        <div class="card-panel p-4">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-medium text-[#645f78]">Usable Stock</span>
+            <i class="fa-solid fa-boxes-stacked text-emerald-600 text-sm"></i>
+          </div>
+          <div class="mt-2 flex items-baseline">
+            <span id="kpi-usable-stock" class="text-2xl font-bold text-emerald-700 tracking-tight font-mono">6,485</span>
+            <span class="ml-1.5 text-xs text-[#645f78]">units</span>
+          </div>
+          <p class="mt-1 text-xs text-[#847c9b]">Non-expired in active racks</p>
+        </div>
+
+        <div class="card-panel p-4">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-medium text-[#645f78]">Capital At Risk (&le;30d)</span>
+            <i class="fa-solid fa-triangle-exclamation text-amber-500 text-sm"></i>
+          </div>
+          <div class="mt-2 flex items-baseline">
+            <span id="kpi-capital-risk" class="text-2xl font-bold text-amber-700 tracking-tight font-mono">₹184,500</span>
+          </div>
+          <p class="mt-1 text-xs text-[#847c9b]">Batches expiring within 30 days</p>
+        </div>
+
+        <div class="card-panel p-4">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-medium text-[#645f78]">Expired Batches</span>
+            <i class="fa-solid fa-ban text-red-500 text-sm"></i>
+          </div>
+          <div class="mt-2 flex items-baseline">
+            <span id="kpi-expired-batches" class="text-2xl font-bold text-red-700 tracking-tight font-mono">4</span>
+            <span class="ml-1.5 text-xs text-[#645f78]">batches</span>
+          </div>
+          <p class="mt-1 text-xs text-[#847c9b]">Locked by safety trigger</p>
+        </div>
+      </div>
+
+      <!-- Quick Actions Grid -->
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-5">
+        <!-- Quick FEFO Dispense Box -->
+        <div class="card-panel p-4 lg:col-span-1">
+          <h2 class="text-sm font-semibold text-[#1e1b2e] flex items-center gap-2 mb-3">
+            <i class="fa-solid fa-bolt text-violet-600 text-xs"></i> Fast FEFO Dispense
+          </h2>
+          <form id="quick-dispense-form" onsubmit="handleQuickDispense(event)" class="space-y-3">
+            <div>
+              <label class="block text-xs font-medium text-[#645f78] mb-1">Select Drug Formulation</label>
+              <select id="quick-med-select" required class="custom-select w-full">
+                <option value="">Loading medicines...</option>
+              </select>
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-[#645f78] mb-1">Required Quantity</label>
+              <input type="number" id="quick-qty-input" required min="1" value="20" class="custom-input w-full">
+            </div>
+            <button type="submit" class="btn-primary w-full justify-center py-2 text-xs">
+              Process FEFO Allocation
+            </button>
+            <p class="text-[11px] text-[#847c9b] text-center font-mono">Calls: <code>sp_dispense_medicine_fefo()</code></p>
+          </form>
+        </div>
+
+        <!-- Recent Expiry Alerts -->
+        <div class="card-panel p-4 lg:col-span-2">
+          <div class="flex items-center justify-between mb-3">
+            <h2 class="text-sm font-semibold text-[#1e1b2e] flex items-center gap-2">
+              <i class="fa-solid fa-triangle-exclamation text-amber-500 text-xs"></i> Priority Expiry Radar
+            </h2>
+            <button onclick="switchTab('radar')" class="text-xs text-violet-700 hover:text-violet-900 font-medium">Full Radar &rarr;</button>
+          </div>
+          <div class="overflow-x-auto rounded border border-[#e9e5f5]">
+            <table class="custom-table">
+              <thead>
+                <tr>
+                  <th>Batch Lot</th>
+                  <th>Medicine</th>
+                  <th>Expiry Date</th>
+                  <th>Available</th>
+                  <th>Classification</th>
+                </tr>
+              </thead>
+              <tbody id="dashboard-radar-table">
+                <tr><td colspan="5" class="py-4 text-center text-[#847c9b]">Loading radar items...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 2: EXPIRY RADAR -->
+    <section id="view-radar" class="hidden space-y-5">
+      <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+        <div>
+          <h2 class="text-base font-semibold text-[#1e1b2e]">Multi-Tier Expiry Risk Radar</h2>
+          <p class="text-xs text-[#645f78]">Classified in real-time by PostgreSQL View <code>v_expiry_risk_radar</code></p>
+        </div>
+        <button onclick="triggerQuarantine()" class="btn-danger text-xs">
+          <i class="fa-solid fa-trash-can"></i> Quarantine All Expired Stock
+        </button>
+      </div>
+
+      <div class="card-panel overflow-hidden">
+        <div class="overflow-x-auto">
+          <table class="custom-table">
+            <thead>
+              <tr>
+                <th>Batch Number</th>
+                <th>Brand Name</th>
+                <th>Generic Name</th>
+                <th>Expiry Date</th>
+                <th>Countdown</th>
+                <th>Available Units</th>
+                <th>Capital at Risk</th>
+                <th>Rack Location</th>
+                <th>Urgency Tier</th>
+              </tr>
+            </thead>
+            <tbody id="full-radar-table">
+              <tr><td colspan="9" class="p-4 text-center text-slate-500">Loading Expiry Risk Radar...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 3: FEFO DISPENSER -->
+    <section id="view-dispense" class="hidden space-y-6">
+      <div>
+        <h2 class="text-base font-semibold text-[#1e1b2e]">Point of Sale & FEFO Allocation Simulator</h2>
+        <p class="text-xs text-[#645f78]">Strictly enforces <strong>First-Expired, First-Out</strong> allocation via PL/pgSQL <code>sp_dispense_medicine_fefo</code></p>
+      </div>
+
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <!-- Order Entry Form -->
+        <div class="card-panel p-6 lg:col-span-1">
+          <h3 class="text-sm font-semibold text-[#1e1b2e] mb-4 flex items-center gap-2">
+            <i class="fa-solid fa-cart-shopping text-emerald-600"></i> New Dispensing Order
+          </h3>
+          <form id="full-dispense-form" onsubmit="handleFullDispense(event)" class="space-y-4">
+            <div>
+              <label class="block text-xs font-medium text-[#585172] mb-1.5">Registered Patient</label>
+              <select id="dispense-cust-select" class="custom-select w-full">
+                <option value="">Walk-in Customer (Anonymous)</option>
+              </select>
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-[#585172] mb-1.5">Select Medication</label>
+              <select id="dispense-med-select" required onchange="updateMedBatchPreview(this.value)" class="custom-select w-full">
+                <option value="">Select medicine...</option>
+              </select>
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-[#585172] mb-1.5">Dispense Quantity</label>
+              <input type="number" id="dispense-qty-input" required min="1" value="50" class="custom-input w-full">
+            </div>
+            <button type="submit" class="btn-primary w-full justify-center py-2.5">
+              <i class="fa-solid fa-check"></i> Process FEFO Dispense
+            </button>
+          </form>
+
+          <!-- Trigger Test Button -->
+          <div class="mt-6 pt-5 border-t border-[#e9e5f5]">
+            <h4 class="text-xs font-semibold text-[#585172] uppercase tracking-wider mb-2">Test Patient Safety Trigger</h4>
+            <p class="text-xs text-[#847c9b] mb-3">Attempt checkout of an expired batch to verify database-engine rejection:</p>
+            <button onclick="testExpiredTrigger()" class="btn-danger w-full justify-center text-xs py-2.5">
+              <i class="fa-solid fa-triangle-exclamation"></i> Trigger Test (Attempt Expired Sale)
+            </button>
+          </div>
+        </div>
+
+        <!-- Available Batches Preview for Selected Drug -->
+        <div class="card-panel p-6 lg:col-span-2">
+          <h3 class="text-sm font-semibold text-[#1e1b2e] mb-1.5 flex items-center gap-2">
+            <i class="fa-solid fa-layer-group text-violet-600"></i> Batch Queue for Selected Drug (FEFO Sequence)
+          </h3>
+          <p class="text-xs text-[#645f78] mb-4">The PL/pgSQL engine allocates units starting from Batch #1:</p>
+          <div class="overflow-x-auto rounded-xl border border-[#e9e5f5]">
+            <table class="custom-table">
+              <thead>
+                <tr>
+                  <th>FEFO Priority</th>
+                  <th>Batch Number</th>
+                  <th>Expiry Date</th>
+                  <th>Stock Available</th>
+                  <th>Retail Price</th>
+                  <th>Batch Status</th>
+                </tr>
+              </thead>
+              <tbody id="med-batch-preview-table">
+                <tr><td colspan="6" class="p-4 text-center text-[#847c9b]">Select a medicine to view batch queue.</td></tr>
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Dispense Result Box -->
+          <div id="dispense-result-box" class="hidden mt-3 p-3.5 rounded-xl bg-[#f8f7fc] border border-[#e9e5f5]">
+            <h4 class="text-xs font-semibold text-emerald-700 flex items-center gap-1.5 mb-1">
+              <i class="fa-solid fa-circle-check"></i> Allocation Verified by PostgreSQL
+            </h4>
+            <p id="dispense-result-msg" class="text-xs text-[#1e1b2e] font-mono"></p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 4: INVENTORY & BATCHES -->
+    <section id="view-inventory" class="hidden space-y-6">
+      <div class="flex items-center justify-between">
+        <div>
+          <h2 class="text-base font-semibold text-[#1e1b2e]">Consolidated Formulary & Stock Health</h2>
+          <p class="text-xs text-[#645f78]">Live aggregated metrics via PostgreSQL View <code>v_medicine_stock_overview</code></p>
+        </div>
+      </div>
+
+      <div class="card-panel overflow-hidden">
+        <div class="overflow-x-auto">
+          <table class="custom-table">
+            <thead>
+              <tr>
+                <th>Brand Name</th>
+                <th>Generic Name</th>
+                <th>Therapeutic Category</th>
+                <th>Dosage & Strength</th>
+                <th>Usable Units</th>
+                <th>Expired Units</th>
+                <th>Batches</th>
+                <th>Earliest Expiry</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody id="inventory-table">
+              <tr><td colspan="9" class="p-4 text-center text-[#847c9b]">Loading inventory catalog...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 5: REORDER SHORTFALL -->
+    <section id="view-reorder" class="hidden space-y-6">
+      <div>
+        <h2 class="text-base font-semibold text-[#1e1b2e]">Procurement Reorder Shortfall Analysis</h2>
+        <p class="text-xs text-[#645f78]">Calculated via PL/pgSQL Function <code>fn_get_reorder_recommendations()</code></p>
+      </div>
+
+      <div class="card-panel overflow-hidden">
+        <div class="overflow-x-auto">
+          <table class="custom-table">
+            <thead>
+              <tr>
+                <th>Medicine Formulation</th>
+                <th>Generic Compound</th>
+                <th>Active Stock</th>
+                <th>Reorder Threshold</th>
+                <th>Target Capacity</th>
+                <th>Shortfall (To Order)</th>
+                <th>Preferred Vendor</th>
+                <th>Est. Procurement Cost</th>
+              </tr>
+            </thead>
+            <tbody id="reorder-table">
+              <tr><td colspan="8" class="p-4 text-center text-[#847c9b]">Loading reorder recommendations...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 6: BATCH RECALL TRACEABILITY -->
+    <section id="view-recall" class="hidden space-y-6">
+      <div>
+        <h2 class="text-base font-semibold text-[#1e1b2e]">Regulatory Batch Recall & Patient Traceability</h2>
+        <p class="text-xs text-[#645f78]">5-Table JOIN tracing every patient, doctor, and invoice for a specific batch lot</p>
+      </div>
+
+      <div class="card-panel p-5">
+        <div class="flex flex-col sm:flex-row gap-3">
+          <input type="text" id="recall-batch-input" value="B-CRO-02" placeholder="Enter Batch Lot Number (e.g. B-CRO-02)" class="custom-input flex-grow">
+          <button onclick="executeRecallSearch()" class="btn-primary whitespace-nowrap">
+            <i class="fa-solid fa-magnifying-glass"></i> Trace Invoices & Patients
+          </button>
+        </div>
+      </div>
+
+      <div class="card-panel overflow-hidden">
+        <div class="overflow-x-auto">
+          <table class="custom-table">
+            <thead>
+              <tr>
+                <th>Batch Number</th>
+                <th>Medicine</th>
+                <th>Invoice Code</th>
+                <th>Timestamp</th>
+                <th>Patient / Customer</th>
+                <th>Contact Phone</th>
+                <th>Prescribing Doctor</th>
+                <th>Dispensed Qty</th>
+              </tr>
+            </thead>
+            <tbody id="recall-results-table">
+              <tr><td colspan="8" class="p-4 text-center text-[#847c9b]">Enter a batch lot above to trace consumption.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 7: FINANCIALS (MATERIALIZED VIEW) -->
+    <section id="view-financials" class="hidden space-y-6">
+      <div class="flex items-center justify-between">
+        <div>
+          <h2 class="text-base font-semibold text-[#1e1b2e]">Monthly Pharmacy Financial Analytics</h2>
+          <p class="text-xs text-[#645f78]">PostgreSQL Materialized View <code>mv_monthly_pharmacy_financials</code></p>
+        </div>
+        <button onclick="triggerRefreshMV()" class="btn-secondary text-xs">
+          <i class="fa-solid fa-rotate"></i> Refresh Materialized View
+        </button>
+      </div>
+
+      <div class="card-panel overflow-hidden">
+        <div class="overflow-x-auto">
+          <table class="custom-table">
+            <thead>
+              <tr>
+                <th>Financial Month</th>
+                <th>Invoices</th>
+                <th>Units Sold</th>
+                <th>Gross Sales (₹)</th>
+                <th>COGS (₹)</th>
+                <th>Gross Profit (₹)</th>
+                <th>Gross Margin</th>
+                <th>Expired Units</th>
+                <th>Disposal Write-off (₹)</th>
+                <th>Net Operational Profit</th>
+              </tr>
+            </thead>
+            <tbody id="financials-table">
+              <tr><td colspan="10" class="p-4 text-center text-[#847c9b]">Loading financials...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 8: AUDIT LEDGER -->
+    <section id="view-audit" class="hidden space-y-6">
+      <div>
+        <h2 class="text-base font-semibold text-[#1e1b2e]">Immutable Inventory Transaction Ledger</h2>
+        <p class="text-xs text-[#645f78]">Append-only audit trail logging all receipts, dispenses, and disposal events</p>
+      </div>
+
+      <div class="card-panel overflow-hidden">
+        <div class="overflow-x-auto">
+          <table class="custom-table">
+            <thead>
+              <tr>
+                <th>Tx ID</th>
+                <th>Timestamp</th>
+                <th>Transaction Type</th>
+                <th>Medicine</th>
+                <th>Batch Lot</th>
+                <th>Stock Change</th>
+                <th>Balance After</th>
+                <th>Reference Code</th>
+                <th>Audit Remarks</th>
+              </tr>
+            </thead>
+            <tbody id="audit-table">
+              <tr><td colspan="9" class="p-4 text-center text-[#847c9b]">Loading audit ledger...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Student Project Footer -->
+  <footer class="border-t border-[#e9e5f5] bg-white py-5 text-center text-xs text-[#645f78]">
+    <div class="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-2">
+      <div class="flex items-center gap-2">
+        <span class="font-bold text-[#1e1b2e]">Smart Pharmacy DBMS</span>
+        <span class="text-[#d5cbef]">&bull;</span>
+        <span>Course: Database Management Systems (CSE Dept)</span>
+        <span class="text-[#d5cbef]">&bull;</span>
+        <span class="dbms-tag">PostgreSQL 16 Engine</span>
+      </div>
+      <div>
+        Designed & Developed by <span class="text-violet-700 font-semibold">Gauransh Purohit</span> | Viva Examination Edition
+      </div>
+    </div>
+  </footer>
+
+  <!-- Viva Defense & DBMS Architecture Modal -->
+  <div id="viva-guide-modal" class="hidden viva-modal-overlay">
+    <div class="viva-modal-card">
+      <div class="flex items-center justify-between pb-3 border-b border-[#e9e5f5]">
+        <div class="flex items-center gap-2.5">
+          <div class="w-8 h-8 rounded-lg bg-violet-100 text-violet-700 flex items-center justify-center text-sm font-semibold">
+            <i class="fa-solid fa-graduation-cap"></i>
+          </div>
+          <div>
+            <h3 class="text-base font-semibold text-[#1e1b2e]">DBMS Architecture & Viva Defense Reference</h3>
+            <p class="text-xs text-[#645f78]">Gauransh Purohit | Technical explanation for Professor & Evaluators</p>
+          </div>
+        </div>
+        <button onclick="closeVivaModal()" class="text-[#847c9b] hover:text-[#1e1b2e] p-1 text-sm">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+      </div>
+
+      <div class="mt-4 space-y-3 text-xs text-[#585172]">
+        <!-- Pillar 1 -->
+        <div class="p-3.5 rounded-xl bg-[#faf9fd] border border-[#e9e5f5]">
+          <h4 class="text-xs font-semibold text-emerald-700 flex items-center gap-2 mb-1">
+            <span class="dbms-tag">1. Schema Normalization</span> 3NF & BCNF Decomposition Proof
+          </h4>
+          <p class="leading-relaxed text-[#585172]">
+            Every non-prime attribute in <code class="text-emerald-800 font-mono bg-emerald-50 px-1 py-0.5 rounded border border-emerald-200">medicine</code> depends strictly on the whole key (<code class="font-mono text-violet-800 bg-violet-50 px-1 py-0.5 rounded border border-violet-200">medicine_id</code>), eliminating partial and transitive dependencies. The <code class="text-emerald-800 font-mono bg-emerald-50 px-1 py-0.5 rounded border border-emerald-200">batch</code> entity is isolated into a 1:N relationship with its own surrogate key (<code class="font-mono text-violet-800 bg-violet-50 px-1 py-0.5 rounded border border-violet-200">batch_id</code>), preventing update anomalies when stock or expiry dates vary across shipments.
+          </p>
+        </div>
+
+        <!-- Pillar 2 -->
+        <div class="p-3.5 rounded-xl bg-[#faf9fd] border border-[#e9e5f5]">
+          <h4 class="text-xs font-semibold text-violet-700 flex items-center gap-2 mb-1">
+            <span class="dbms-tag">2. PL/pgSQL FEFO Engine</span> Procedure: <code class="font-mono text-violet-800 bg-violet-50 px-1 py-0.5 rounded border border-violet-200">sp_dispense_medicine_fefo()</code>
+          </h4>
+          <p class="leading-relaxed text-[#585172]">
+            Allocates inventory using a PostgreSQL cursor ordered strictly by <code class="font-mono text-violet-800 bg-violet-50 px-1 py-0.5 rounded border border-violet-200">expiry_date ASC</code>. Uses <code class="font-mono text-emerald-800 bg-emerald-50 px-1 py-0.5 rounded border border-emerald-200">SELECT ... FOR UPDATE</code> row-level locks on the batch table to eliminate race conditions (lost updates) when concurrent cashiers dispense from the same batch.
+          </p>
+        </div>
+
+        <!-- Pillar 3 -->
+        <div class="p-3.5 rounded-xl bg-[#faf9fd] border border-[#e9e5f5]">
+          <h4 class="text-xs font-semibold text-amber-700 flex items-center gap-2 mb-1">
+            <span class="dbms-tag">3. Database Triggers</span> Patient Safety & Stock Ledger Integrity
+          </h4>
+          <p class="leading-relaxed text-[#585172]">
+            <code class="font-mono text-amber-800 bg-amber-50 px-1 py-0.5 rounded border border-amber-200">trg_prevent_expired_dispense</code> executes <code class="font-mono text-slate-700">BEFORE INSERT</code> on sales order items, throwing an explicit database exception (<code class="font-mono text-red-800 bg-red-50 px-1 py-0.5 rounded border border-red-200">SQLSTATE '20001'</code>) if <code class="font-mono text-slate-700">expiry_date &lt; CURRENT_DATE</code>. <code class="font-mono text-amber-800 bg-amber-50 px-1 py-0.5 rounded border border-amber-200">trg_auto_deduct_batch_stock</code> executes <code class="font-mono text-slate-700">AFTER INSERT</code> to automatically decrement batch quantity and insert an immutable audit record into <code class="font-mono text-violet-800 bg-violet-50 px-1 py-0.5 rounded border border-violet-200">inventory_ledger</code>.
+          </p>
+        </div>
+
+        <!-- Pillar 4 -->
+        <div class="p-3.5 rounded-xl bg-[#faf9fd] border border-[#e9e5f5]">
+          <h4 class="text-xs font-semibold text-violet-700 flex items-center gap-2 mb-1">
+            <span class="dbms-tag">4. Indexing & Optimization</span> Partial Composite Index: <code class="font-mono text-violet-800 bg-violet-50 px-1 py-0.5 rounded border border-violet-200">idx_batch_fefo_active</code>
+          </h4>
+          <p class="leading-relaxed text-[#585172]">
+            Created as: <code class="font-mono text-[#585172] bg-[#f0eef7] px-1 py-0.5 rounded">CREATE INDEX idx_batch_fefo_active ON batch (medicine_id, expiry_date) WHERE quantity_available &gt; 0 AND status IN ('ACTIVE', 'NEAR_EXPIRY');</code>. Reduces FEFO lookup complexity from full table scan <code class="font-mono text-red-700 font-semibold">O(N)</code> to targeted index scan <code class="font-mono text-emerald-700 font-semibold">O(log K)</code>.
+          </p>
+        </div>
+
+        <!-- Pillar 5 -->
+        <div class="p-3.5 rounded-xl bg-[#faf9fd] border border-[#e9e5f5]">
+          <h4 class="text-xs font-semibold text-indigo-700 flex items-center gap-2 mb-1">
+            <span class="dbms-tag">5. Analytics & Views</span> Materialized View: <code class="font-mono text-indigo-800 bg-indigo-50 px-1 py-0.5 rounded border border-indigo-200">mv_monthly_pharmacy_financials</code>
+          </h4>
+          <p class="leading-relaxed text-[#585172]">
+            Caches multi-table financial aggregates (Gross Sales, COGS, Expiry Losses, Net Margins). Can be refreshed without locking queries using <code class="font-mono text-[#585172] bg-[#f0eef7] px-1 py-0.5 rounded">REFRESH MATERIALIZED VIEW CONCURRENTLY</code> via its unique index on <code class="font-mono text-indigo-800 bg-indigo-50 px-1 py-0.5 rounded border border-indigo-200">financial_month</code>.
+          </p>
+        </div>
+      </div>
+
+      <div class="mt-6 pt-4 border-t border-[#e9e5f5] flex justify-end">
+        <button onclick="closeVivaModal()" class="btn-primary text-xs">
+          <i class="fa-solid fa-check"></i> Close Reference
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
