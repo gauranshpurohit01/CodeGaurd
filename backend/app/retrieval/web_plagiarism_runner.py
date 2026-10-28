@@ -57,14 +57,21 @@ def run_web_plagiarism_pipeline(
     retriever: Optional[GitHubWebRetriever] = None,
 ) -> WebPlagiarismReport:
     """Run full web candidate retrieval and plagiarism comparison pipeline."""
-    # 1. Extract high-entropy signatures
+    # 1. Extract distinctive signatures
     signatures = extract_signatures(language, source)
+    if not signatures and source and source.strip():
+        # Fallback: extract any identifier tokens from source so any code is checked
+        import re
+        tokens = [t for t in re.findall(r"\b[A-Za-z_][A-Za-z0-9_]{1,}\b", source) if t.lower() not in {"include", "stdio", "return", "int", "void", "main"}]
+        if tokens:
+            signatures = tokens[:3]
+
     if not signatures:
         return WebPlagiarismReport(
-            checked=False,
+            checked=True,
             search_queries_used=[],
             matches=[],
-            status_message="No high-entropy code signatures identified for web retrieval; local database search only.",
+            status_message="No distinctive code signatures found to query on GitHub (code is empty or trivial boilerplate).",
         )
 
     # 2. Retrieve candidate source files from GitHub

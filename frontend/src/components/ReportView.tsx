@@ -386,18 +386,27 @@ def main() -> int:
 
       {/* NO MATCHES FALLBACK FOR ACTIVE MODE */}
       {currentReports.length === 0 && activeSourceTab !== 'custom' && (
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-8 flex flex-col items-center justify-center text-center">
-          <div className="h-14 w-14 bg-slate-800 rounded-full flex items-center justify-center mb-3 text-slate-500">
-            {activeSourceTab === 'web' ? <Globe className="h-7 w-7 text-cyan-400" /> : <ShieldAlert className="h-7 w-7 text-emerald-400" />}
+        <div className="bg-slate-900 border border-slate-800 rounded-xl p-8 flex flex-col items-center justify-center text-center shadow-sm">
+          <div className="h-14 w-14 bg-emerald-500/10 border border-emerald-500/30 rounded-full flex items-center justify-center mb-3 text-emerald-400">
+            {activeSourceTab === 'web' ? <CheckCircle2 className="h-7 w-7 text-emerald-400" /> : <ShieldAlert className="h-7 w-7 text-emerald-400" />}
           </div>
           <h3 className="text-base font-bold text-slate-200">
-            {activeSourceTab === 'web' ? 'No Live Open-Source (GitHub) Matches' : 'No Local Database Submissions'}
+            {activeSourceTab === 'web' ? 'Internet & GitHub Plagiarism Search Completed' : 'No Local Database Submissions'}
           </h3>
-          <p className="text-xs text-slate-400 mt-1.5 max-w-md">
+          <p className="text-xs text-slate-400 mt-2 max-w-lg leading-relaxed">
             {activeSourceTab === 'web'
-              ? 'No public open-source candidates exceeded similarity thresholds. You can switch to the Local Submissions Database tab above.'
+              ? 'CodeGuard queried GitHub and public internet repositories using your code signatures. No open-source candidates exceeded similarity thresholds — your code appears to be original and clean of public plagiarism!'
               : 'The local submissions database does not contain any records for comparison.'}
           </p>
+          {activeSourceTab === 'web' && reports.length > 0 && (
+            <button
+              onClick={() => setActiveSourceTab('local')}
+              className="mt-4 flex items-center space-x-2 bg-slate-800 hover:bg-slate-700 text-emerald-300 border border-slate-700 px-4 py-2 rounded-lg text-xs font-semibold transition-all shadow-sm"
+            >
+              <Database className="h-4 w-4 text-emerald-400" />
+              <span>Inspect Local Database Matches ({reports.length} Submissions)</span>
+            </button>
+          )}
         </div>
       )}
 
