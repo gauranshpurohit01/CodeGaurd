@@ -19,6 +19,7 @@ from app.api.schemas import (
     MatchedSubtreeSchema,
     SubmissionCreateRequest,
     SubmissionResponse,
+    ASTViewRequest,
     ASTViewResponse,
     TokenView,
     WebMatchSchema,
@@ -484,9 +485,7 @@ def get_submission_by_id(sub_id: int, db: Session = Depends(get_db)):
     return sub
 
 
-@router.get("/ast", response_model=ASTViewResponse)
-def view_pipeline(language: str, source: str):
-    """Pipeline visualizer endpoint: decomposes code into tokens, raw AST, canonical AST, and generated C."""
+def _build_pipeline_view(language: str, source: str) -> ASTViewResponse:
     conv_res = convert_to_c(language, source)
     c_source = conv_res.c_source if conv_res.success else source
 
@@ -507,3 +506,15 @@ def view_pipeline(language: str, source: str):
         canonical_ast=canonical_ast_dict,
         generated_c=c_source,
     )
+
+
+@router.get("/ast", response_model=ASTViewResponse)
+def view_pipeline(language: str, source: str):
+    """Pipeline visualizer endpoint (GET): decomposes code into tokens, raw AST, canonical AST, and generated C."""
+    return _build_pipeline_view(language, source)
+
+
+@router.post("/ast", response_model=ASTViewResponse)
+def view_pipeline_post(req: ASTViewRequest):
+    """Pipeline visualizer endpoint (POST): decomposes code into tokens, raw AST, canonical AST, and generated C."""
+    return _build_pipeline_view(req.language, req.source)

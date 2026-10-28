@@ -17,8 +17,11 @@ export const PipelineView: React.FC<PipelineViewProps> = ({ source, language }) 
     setLoading(true);
     setError(null);
     try {
-      const params = new URLSearchParams({ language, source });
-      const resp = await fetch(`/api/ast?${params.toString()}`);
+      const resp = await fetch('/api/ast', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ language, source }),
+      });
       if (!resp.ok) {
         throw new Error(`Failed to load compiler pipeline: ${resp.statusText}`);
       }

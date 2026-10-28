@@ -92,3 +92,47 @@ def test_api_direct_compare():
     assert res.status_code == 200
     data = res.json()
     assert data["logic_similarity"] >= 0.85
+
+
+def test_api_run_test_suite_batch():
+    source = """#include <stdio.h>
+int fact(int n) { int r=1; for(int i=1;i<=n;i++) r*=i; return r; }
+int main(void) {
+    int n;
+    if (scanf("%d", &n) == 1) {
+        printf("%d\\n", fact(n));
+    }
+    return 0;
+}
+"""
+    req = {
+        "language": "c",
+        "source": source,
+        "tests": [["5", "120"], ["3", "6"], ["4", "99"]],
+        "check_plagiarism": False,
+    }
+    res = client.post("/api/run", json=req)
+    assert res.status_code == 200
+    data = res.json()
+    assert data["compile_ok"] is True
+    assert len(data["test_results"]) == 3
+    assert data["test_results"][0]["passed"] is True
+    assert data["test_results"][0]["actual"] == "120"
+    assert data["test_results"][1]["passed"] is True
+    assert data["test_results"][1]["actual"] == "6"
+    assert data["test_results"][2]["passed"] is False
+    assert data["test_results"][2]["actual"] == "24"
+    assert data["exit_code"] == 1
+
+
+def test_api_ast_post():
+    code = "int square(int x) { return x * x; }"
+    res = client.post("/api/ast", json={"language": "c", "source": code})
+    assert res.status_code == 200
+    data = res.json()
+    assert "tokens" in data
+    assert "raw_ast" in data
+    assert "canonical_ast" in data
+    assert "generated_c" in data
+    assert data["raw_ast"]["kind"] == "TranslationUnit"
+

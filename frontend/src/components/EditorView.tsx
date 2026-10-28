@@ -1,7 +1,13 @@
 import React, { useState } from 'react';
 import Editor from '@monaco-editor/react';
-import { Play, ArrowRightLeft, ShieldAlert, Save, Terminal, Clock, Cpu, CheckCircle2, AlertTriangle, Globe, ExternalLink, ShieldCheck } from 'lucide-react';
+import { Play, ArrowRightLeft, ShieldAlert, Save, Terminal, Clock, Cpu, CheckCircle2, AlertTriangle, Globe, ExternalLink, ShieldCheck, ListChecks, Plus, Trash2, XCircle, Sparkles } from 'lucide-react';
 import { SupportedLanguage, RunResponse, ConvertResponse, MatchReport, WebPlagiarismResult } from '../types';
+
+interface TestCaseItem {
+  id: string;
+  input: string;
+  expected: string;
+}
 
 interface EditorViewProps {
   source: string;
@@ -44,6 +50,14 @@ export const EditorView: React.FC<EditorViewProps> = ({
   onOpenPipeline,
 }) => {
   const [stdin, setStdin] = useState('');
+  const [inputMode, setInputMode] = useState<'tests' | 'stdin'>('tests');
+  const [testCases, setTestCases] = useState<TestCaseItem[]>([
+    { id: '1', input: '', expected: '120' },
+    { id: '2', input: '5', expected: '120' },
+    { id: '3', input: '3', expected: '6' },
+  ]);
+  const [activeTestCaseIndex, setActiveTestCaseIndex] = useState(0);
+
   const [isRunning, setIsRunning] = useState(false);
   const [isConverting, setIsConverting] = useState(false);
   const [isChecking, setIsChecking] = useState(false);
@@ -53,19 +67,68 @@ export const EditorView: React.FC<EditorViewProps> = ({
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [submissionTitle, setSubmissionTitle] = useState('My Submission');
 
+  const handleAddTestCase = () => {
+    const newId = String(Date.now());
+    const newCase: TestCaseItem = { id: newId, input: '', expected: '' };
+    setTestCases((prev) => [...prev, newCase]);
+    setActiveTestCaseIndex(testCases.length);
+  };
+
+  const handleRemoveTestCase = (indexToRemove: number) => {
+    if (testCases.length <= 1) return;
+    const updated = testCases.filter((_, i) => i !== indexToRemove);
+    setTestCases(updated);
+    if (activeTestCaseIndex >= updated.length) {
+      setActiveTestCaseIndex(updated.length - 1);
+    }
+  };
+
+  const handleUpdateTestCase = (field: 'input' | 'expected', value: string) => {
+    setTestCases((prev) => {
+      const copy = [...prev];
+      if (copy[activeTestCaseIndex]) {
+        copy[activeTestCaseIndex] = {
+          ...copy[activeTestCaseIndex],
+          [field]: value,
+        };
+      }
+      return copy;
+    });
+  };
+
   const handleRun = async () => {
     setIsRunning(true);
-    setStatusMessage('Compiling and executing in sandbox (with real-time plagiarism check)...');
+    setStatusMessage(
+      inputMode === 'tests'
+        ? `Compiling & running batch test suite (${testCases.length} test cases)...`
+        : 'Compiling and executing in sandbox (with real-time plagiarism check)...'
+    );
     try {
+      const testsPayload =
+        inputMode === 'tests' && testCases.length > 0
+          ? testCases.map((tc) => [tc.input, tc.expected])
+          : undefined;
+
       const resp = await fetch('/api/run', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ language, source, stdin, check_plagiarism: true, check_web: checkWeb }),
+        body: JSON.stringify({
+          language,
+          source,
+          stdin: inputMode === 'stdin' ? stdin : '',
+          tests: testsPayload,
+          check_plagiarism: true,
+          check_web: checkWeb,
+        }),
       });
       const data: RunResponse = await resp.json();
       setRunResult(data);
       if (data.compile_ok) {
         let msg = 'Execution completed.';
+        if (data.test_results && data.test_results.length > 0) {
+          const passed = data.test_results.filter((r) => r.passed).length;
+          msg = `Test Suite: ${passed}/${data.test_results.length} test cases passed.`;
+        }
         if (data.web_plagiarism?.matches && data.web_plagiarism.matches.length > 0) {
           msg += ` Found ${data.web_plagiarism.matches.length} matching repositories on GitHub!`;
         }
@@ -179,7 +242,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
             className="flex items-center space-x-1.5 bg-emerald-600 hover:bg-emerald-500 text-slate-950 px-3.5 py-1.5 rounded-lg text-sm font-semibold transition-all shadow-md shadow-emerald-600/20 disabled:opacity-50"
           >
             <Play className="h-4 w-4 fill-slate-950" />
-            <span>{isRunning ? 'Running...' : 'Run'}</span>
+            <span>{isRunning ? 'Running...' : inputMode === 'tests' ? `Run Test Suite (${testCases.length})` : 'Run & Execute'}</span>
           </button>
 
           {language !== 'c' && language !== 'cpp' && (
@@ -260,16 +323,143 @@ export const EditorView: React.FC<EditorViewProps> = ({
 
         {/* Right Pane: Stdin + Terminal / Output */}
         <div className="lg:col-span-4 flex flex-col gap-4">
-          {/* Stdin Panel */}
-          <div className="bg-slate-900 border border-slate-800 rounded-xl p-3 flex flex-col">
-            <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Standard Input (stdin):</label>
-            <textarea
-              value={stdin}
-              onChange={(e) => setStdin(e.target.value)}
-              placeholder="Arguments or inputs for scanf / input()..."
-              rows={3}
-              className="bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-xs font-mono text-slate-200 focus:outline-none focus:border-emerald-500"
-            />
+          {/* Input & Test Case Manager Panel */}
+          <div className="bg-slate-900 border border-slate-800 rounded-xl p-3 flex flex-col gap-2.5 shadow-sm">
+            {/* Header: Mode Switcher */}
+            <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+              <div className="flex items-center space-x-1 bg-slate-950 p-0.5 rounded-lg border border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setInputMode('tests')}
+                  className={`flex items-center space-x-1.5 px-2.5 py-1 rounded text-xs font-semibold transition-all ${
+                    inputMode === 'tests'
+                      ? 'bg-slate-800 text-emerald-400 shadow-sm'
+                      : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  <ListChecks className="h-3.5 w-3.5" />
+                  <span>Test Suite ({testCases.length})</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setInputMode('stdin')}
+                  className={`flex items-center space-x-1.5 px-2.5 py-1 rounded text-xs font-semibold transition-all ${
+                    inputMode === 'stdin'
+                      ? 'bg-slate-800 text-cyan-400 shadow-sm'
+                      : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  <Terminal className="h-3.5 w-3.5" />
+                  <span>Single Stdin</span>
+                </button>
+              </div>
+
+              {inputMode === 'tests' && (
+                <button
+                  type="button"
+                  onClick={handleAddTestCase}
+                  className="flex items-center space-x-1 text-[11px] font-medium bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-2 py-1 rounded transition-colors"
+                  title="Add another test case"
+                >
+                  <Plus className="h-3 w-3" />
+                  <span>Add Case</span>
+                </button>
+              )}
+            </div>
+
+            {/* Mode 1: Single Stdin */}
+            {inputMode === 'stdin' && (
+              <div className="flex flex-col gap-1.5">
+                <span className="text-[11px] text-slate-400 font-medium">Standard Input for scanf() / input():</span>
+                <textarea
+                  value={stdin}
+                  onChange={(e) => setStdin(e.target.value)}
+                  placeholder="Arguments or inputs for scanf / input()..."
+                  rows={3}
+                  className="bg-slate-950 border border-slate-800 rounded-lg p-2.5 text-xs font-mono text-slate-200 focus:outline-none focus:border-cyan-500"
+                />
+              </div>
+            )}
+
+            {/* Mode 2: Multi-Test-Case Suite */}
+            {inputMode === 'tests' && (
+              <div className="flex flex-col gap-2">
+                {/* Case Selector Tabs */}
+                <div className="flex items-center space-x-1.5 overflow-x-auto pb-1">
+                  {testCases.map((tc, idx) => {
+                    const res = runResult?.test_results?.[idx];
+                    return (
+                      <button
+                        key={tc.id || idx}
+                        type="button"
+                        onClick={() => setActiveTestCaseIndex(idx)}
+                        className={`flex items-center space-x-1 px-2.5 py-1 rounded text-xs font-mono transition-all shrink-0 ${
+                          activeTestCaseIndex === idx
+                            ? 'bg-slate-800 text-slate-100 border border-emerald-500/60 font-bold'
+                            : 'bg-slate-950 text-slate-400 hover:text-slate-300 border border-slate-800'
+                        }`}
+                      >
+                        {res ? (
+                          res.passed ? (
+                            <CheckCircle2 className="h-3 w-3 text-emerald-400" />
+                          ) : (
+                            <XCircle className="h-3 w-3 text-rose-400" />
+                          )
+                        ) : (
+                          <span className="h-1.5 w-1.5 rounded-full bg-slate-600" />
+                        )}
+                        <span>Case {idx + 1}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Active Case Editor */}
+                {testCases[activeTestCaseIndex] && (
+                  <div className="flex flex-col gap-2 bg-slate-950 border border-slate-800/80 rounded-lg p-2.5">
+                    <div className="flex items-center justify-between text-[11px]">
+                      <span className="font-semibold text-slate-300 uppercase tracking-wider">
+                        Configuring Case #{activeTestCaseIndex + 1}
+                      </span>
+                      {testCases.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveTestCase(activeTestCaseIndex)}
+                          className="text-slate-500 hover:text-rose-400 transition-colors flex items-center gap-1 text-[10px]"
+                          title="Delete this test case"
+                        >
+                          <Trash2 className="h-3 w-3" />
+                          <span>Delete Case</span>
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <div className="flex flex-col gap-1">
+                        <label className="text-[10px] text-slate-400 uppercase font-mono font-semibold">Input (stdin):</label>
+                        <textarea
+                          value={testCases[activeTestCaseIndex].input}
+                          onChange={(e) => handleUpdateTestCase('input', e.target.value)}
+                          placeholder="e.g. 5"
+                          rows={2}
+                          className="bg-slate-900 border border-slate-800 rounded p-1.5 text-xs font-mono text-slate-200 focus:outline-none focus:border-emerald-500"
+                        />
+                      </div>
+                      <div className="flex flex-col gap-1">
+                        <label className="text-[10px] text-slate-400 uppercase font-mono font-semibold">Expected Output:</label>
+                        <textarea
+                          value={testCases[activeTestCaseIndex].expected}
+                          onChange={(e) => handleUpdateTestCase('expected', e.target.value)}
+                          placeholder="e.g. 120"
+                          rows={2}
+                          className="bg-slate-900 border border-slate-800 rounded p-1.5 text-xs font-mono text-slate-200 focus:outline-none focus:border-emerald-500"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Terminal Output */}
@@ -309,12 +499,127 @@ export const EditorView: React.FC<EditorViewProps> = ({
                     </div>
                   ) : (
                     <div>
-                      {runResult.stdout ? (
-                        <div className="text-emerald-300 whitespace-pre-wrap leading-relaxed">
-                          {runResult.stdout}
+                      {/* Batch Test Case Results (if tests were executed) */}
+                      {runResult.test_results && runResult.test_results.length > 0 ? (
+                        <div className="space-y-3 mb-3">
+                          {(() => {
+                            const passedCount = runResult.test_results.filter((r) => r.passed).length;
+                            const totalCount = runResult.test_results.length;
+                            const allPassed = passedCount === totalCount;
+                            return (
+                              <div
+                                className={`flex items-center justify-between p-3 rounded-xl border ${
+                                  allPassed
+                                    ? 'bg-emerald-950/40 border-emerald-500/30 text-emerald-300'
+                                    : 'bg-rose-950/40 border-rose-500/30 text-rose-300'
+                                }`}
+                              >
+                                <div className="flex items-center space-x-2.5">
+                                  {allPassed ? (
+                                    <CheckCircle2 className="h-5 w-5 text-emerald-400 shrink-0" />
+                                  ) : (
+                                    <XCircle className="h-5 w-5 text-rose-400 shrink-0" />
+                                  )}
+                                  <div>
+                                    <div className="font-bold text-xs">
+                                      {allPassed
+                                        ? 'All Test Cases Passed!'
+                                        : `${passedCount} of ${totalCount} Test Cases Passed`}
+                                    </div>
+                                    <div className="text-[10px] text-slate-400">
+                                      Total execution time: {runResult.time_ms} ms
+                                    </div>
+                                  </div>
+                                </div>
+                                <span
+                                  className={`text-xs font-mono font-bold px-2.5 py-1 rounded-full ${
+                                    allPassed
+                                      ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                                      : 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
+                                  }`}
+                                >
+                                  {passedCount}/{totalCount} Passed
+                                </span>
+                              </div>
+                            );
+                          })()}
+
+                          <div className="space-y-2">
+                            {runResult.test_results.map((r, idx) => (
+                              <div
+                                key={idx}
+                                className={`bg-slate-900 border rounded-lg p-2.5 flex flex-col gap-2 transition-all ${
+                                  r.passed
+                                    ? 'border-emerald-900/60 hover:border-emerald-700/60'
+                                    : 'border-rose-900/80 hover:border-rose-700/80'
+                                }`}
+                              >
+                                <div className="flex items-center justify-between text-xs">
+                                  <div className="flex items-center space-x-2 font-bold font-mono">
+                                    {r.passed ? (
+                                      <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
+                                    ) : (
+                                      <XCircle className="h-3.5 w-3.5 text-rose-400 shrink-0" />
+                                    )}
+                                    <span className={r.passed ? 'text-emerald-300' : 'text-rose-300'}>
+                                      Test Case #{idx + 1}: {r.passed ? 'PASSED' : 'FAILED'}
+                                    </span>
+                                  </div>
+                                  <span className="text-[10px] font-mono text-slate-400">
+                                    {r.time_ms} ms
+                                  </span>
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-2 text-[11px] font-mono">
+                                  <div className="bg-slate-950 p-2 rounded border border-slate-800/80">
+                                    <span className="text-slate-500 block text-[9px] uppercase font-bold">
+                                      Input (stdin)
+                                    </span>
+                                    <span className="text-slate-300 whitespace-pre">
+                                      {r.input ? r.input : <em className="text-slate-600">(empty)</em>}
+                                    </span>
+                                  </div>
+                                  <div className="bg-slate-950 p-2 rounded border border-slate-800/80">
+                                    <span className="text-slate-500 block text-[9px] uppercase font-bold">
+                                      Expected Output
+                                    </span>
+                                    <span className="text-slate-300 whitespace-pre">
+                                      {r.expected ? r.expected : <em className="text-slate-600">(empty)</em>}
+                                    </span>
+                                  </div>
+                                </div>
+
+                                <div className="bg-slate-950 p-2 rounded border border-slate-800/80 text-[11px] font-mono">
+                                  <span className="text-slate-500 block text-[9px] uppercase font-bold">
+                                    Actual Output
+                                  </span>
+                                  <span
+                                    className={`whitespace-pre ${
+                                      r.passed ? 'text-emerald-300' : 'text-rose-300 font-semibold'
+                                    }`}
+                                  >
+                                    {r.actual ? r.actual : <em className="text-slate-600">(no output)</em>}
+                                  </span>
+                                  {!r.passed && (
+                                    <div className="mt-1 pt-1 border-t border-rose-900/40 text-[10px] text-rose-400">
+                                      Assertion mismatch: expected '{r.expected}' but received '{r.actual}'.
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
                         </div>
                       ) : (
-                        <div className="text-slate-500 italic">(Program exited without output)</div>
+                        <div>
+                          {runResult.stdout ? (
+                            <div className="text-emerald-300 whitespace-pre-wrap leading-relaxed">
+                              {runResult.stdout}
+                            </div>
+                          ) : (
+                            <div className="text-slate-500 italic">(Program exited without output)</div>
+                          )}
+                        </div>
                       )}
 
                       {runResult.stderr && (

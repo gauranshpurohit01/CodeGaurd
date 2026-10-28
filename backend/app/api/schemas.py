@@ -169,6 +169,11 @@ class TokenView(BaseModel):
     col: int
 
 
+class ASTViewRequest(BaseModel):
+    language: str
+    source: str
+
+
 class ASTViewResponse(BaseModel):
     tokens: List[TokenView]
     raw_ast: Dict[str, Any]
