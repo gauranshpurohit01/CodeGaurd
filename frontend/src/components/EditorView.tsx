@@ -96,6 +96,27 @@ export const EditorView: React.FC<EditorViewProps> = ({
     });
   };
 
+  const parseApiResponse = async <T,>(resp: Response): Promise<T> => {
+    if (!resp.ok) {
+      let detail = '';
+      try {
+        const errJson = await resp.json();
+        detail = errJson.detail || '';
+      } catch {
+        detail = await resp.text().catch(() => '');
+      }
+      if (resp.status === 502 || resp.status === 503 || resp.status === 504) {
+        throw new Error("Backend server is not running on http://localhost:8000. Please start it using 'make run-backend' in your terminal.");
+      }
+      throw new Error(detail || `Server error (${resp.status} ${resp.statusText})`);
+    }
+    try {
+      return (await resp.json()) as T;
+    } catch {
+      throw new Error("Backend returned empty response. Please verify backend is running on port 8000 ('make run-backend').");
+    }
+  };
+
   const handleRun = async () => {
     setIsRunning(true);
     setStatusMessage(
@@ -121,7 +142,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
           check_web: checkWeb,
         }),
       });
-      const data: RunResponse = await resp.json();
+      const data: RunResponse = await parseApiResponse<RunResponse>(resp);
       setRunResult(data);
       if (data.compile_ok) {
         let msg = 'Execution completed.';
@@ -152,7 +173,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ language, source }),
       });
-      const data: ConvertResponse = await resp.json();
+      const data: ConvertResponse = await parseApiResponse<ConvertResponse>(resp);
       setConvertResult(data);
       if (data.success) {
         setStatusMessage('Successfully converted to compilable C.');
@@ -175,7 +196,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ language, source, compare_with: 'database', check_web: checkWeb }),
       });
-      const data = await resp.json();
+      const data: any = await parseApiResponse(resp);
       onCheckPlagiarism(data.matches, data.web_plagiarism);
     } catch (err: any) {
       setStatusMessage(`Plagiarism check error: ${err.message}`);
