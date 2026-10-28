@@ -315,6 +315,34 @@ export const EditorView: React.FC<EditorViewProps> = ({
         </div>
       </div>
 
+      {/* Language Mismatch Warning Banner */}
+      {((language === 'python' && (source.trim().startsWith('#include') || source.includes('int main') || source.includes('printf('))) ||
+        (language === 'c' && (source.trim().startsWith('def ') || source.includes('print('))) ||
+        (language === 'java' && (source.trim().startsWith('#include') || source.trim().startsWith('def ')))) && (
+        <div className="bg-amber-950/60 border border-amber-600/50 rounded-xl p-3 flex flex-wrap items-center justify-between gap-2 text-xs text-amber-200 shadow-sm animate-pulse">
+          <div className="flex items-center space-x-2">
+            <AlertTriangle className="h-4 w-4 text-amber-400 shrink-0" />
+            <span>
+              {language === 'python' && source.trim().startsWith('#include')
+                ? "Language Mismatch: You have C code in the editor, but the language dropdown is set to 'Python (Typed Subset)'."
+                : "Language Mismatch: The code syntax does not match the selected language dropdown."}
+            </span>
+          </div>
+          <button
+            onClick={() => {
+              if (source.trim().startsWith('#include') || source.includes('int main') || source.includes('printf(')) {
+                setLanguage('c');
+              } else if (source.trim().startsWith('def ')) {
+                setLanguage('python');
+              }
+            }}
+            className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold px-3 py-1 rounded-lg text-xs transition-colors shrink-0 shadow"
+          >
+            Switch Language to {source.trim().startsWith('#include') ? 'C' : 'Python'}
+          </button>
+        </div>
+      )}
+
       {/* Editor & Console Split */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 flex-1 min-h-[520px]">
         {/* Monaco Editor Container */}
@@ -708,8 +736,23 @@ export const EditorView: React.FC<EditorViewProps> = ({
 
               {convertResult && (
                 <div className="mt-4 pt-3 border-t border-slate-800">
-                  <div className="font-semibold text-cyan-400 mb-1 flex items-center gap-1.5">
-                    <CheckCircle2 className="h-3.5 w-3.5" /> Generated C Source:
+                  <div className="flex items-center justify-between mb-1.5">
+                    <div className="font-semibold text-cyan-400 flex items-center gap-1.5">
+                      <CheckCircle2 className="h-3.5 w-3.5" /> Generated C Source:
+                    </div>
+                    {convertResult.success && (
+                      <button
+                        onClick={() => {
+                          setLanguage('c');
+                          setSource(convertResult.c_source);
+                          setStatusMessage('Loaded generated C code into the editor (Language switched to C).');
+                        }}
+                        className="text-[10px] font-bold bg-cyan-600 hover:bg-cyan-500 text-slate-950 px-2.5 py-1 rounded transition-all shadow"
+                        title="Load this C code into the main editor"
+                      >
+                        Load C into Editor
+                      </button>
+                    )}
                   </div>
                   <pre className="text-slate-300 bg-slate-900 p-2.5 rounded-lg border border-slate-800 text-[11px] overflow-auto max-h-48">
                     {convertResult.c_source}
