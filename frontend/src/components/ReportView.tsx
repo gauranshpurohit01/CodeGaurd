@@ -15,12 +15,8 @@ export const ReportView: React.FC<ReportViewProps> = ({ reports, querySource, we
   // Check if web plagiarism returned matches
   const hasWebMatches = !!(webPlagiarism && webPlagiarism.matches && webPlagiarism.matches.length > 0);
 
-  // Default to 'web' if internet candidates exist, else 'local', else 'custom'
-  const [activeSourceTab, setActiveSourceTab] = useState<ActiveSourceTab>(() => {
-    if (hasWebMatches) return 'web';
-    if (reports.length > 0) return 'local';
-    return 'custom';
-  });
+  // Default to 'web' (Internet / GitHub) as the primary plagiarism check
+  const [activeSourceTab, setActiveSourceTab] = useState<ActiveSourceTab>('web');
 
   const [selectedWebMatchIndex, setSelectedWebMatchIndex] = useState(0);
   const [selectedLocalMatchIndex, setSelectedLocalMatchIndex] = useState(0);
@@ -69,7 +65,8 @@ def main() -> int:
       if (webPlagiarism.matches && webPlagiarism.matches.length > 0) {
         setSelectedWebMatchIndex(0);
       }
-    } else if (reports.length > 0) {
+    } else if (webPlagiarism === undefined && reports.length > 0) {
+      // Only switch to local when web check was not run (e.g. Submissions view compare)
       setActiveSourceTab('local');
       setSelectedLocalMatchIndex(0);
     }
@@ -201,7 +198,7 @@ def main() -> int:
             }`}
           >
             <Globe className="h-4 w-4 text-cyan-300" />
-            <span>🌐 Open-Source (GitHub) Matches</span>
+            <span>🌐 Internet & GitHub Plagiarism</span>
             <span
               className={`px-2 py-0.5 rounded-full text-[11px] font-mono font-bold ${
                 activeSourceTab === 'web' ? 'bg-cyan-950 text-cyan-200 border border-cyan-400/40' : 'bg-slate-800 text-slate-300'
@@ -220,7 +217,7 @@ def main() -> int:
             }`}
           >
             <Database className="h-4 w-4 text-emerald-300" />
-            <span>📁 Local Submissions Database</span>
+            <span>📁 Classroom Submissions (Optional)</span>
             <span
               className={`px-2 py-0.5 rounded-full text-[11px] font-mono font-bold ${
                 activeSourceTab === 'local' ? 'bg-emerald-950 text-emerald-200 border border-emerald-400/40' : 'bg-slate-800 text-slate-300'

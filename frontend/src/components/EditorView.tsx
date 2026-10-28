@@ -280,10 +280,11 @@ export const EditorView: React.FC<EditorViewProps> = ({
           <button
             onClick={handleCheckPlagiarism}
             disabled={isChecking}
-            className="flex items-center space-x-1.5 bg-rose-600 hover:bg-rose-500 text-white px-3.5 py-1.5 rounded-lg text-sm font-semibold transition-all shadow-md shadow-rose-600/20 disabled:opacity-50"
+            className="flex items-center space-x-2 bg-gradient-to-r from-rose-600 to-pink-600 hover:from-rose-500 hover:to-pink-500 text-white px-4 py-1.5 rounded-lg text-sm font-bold transition-all shadow-md shadow-rose-600/25 disabled:opacity-50"
+            title="Scan public internet and GitHub repositories to detect copied code"
           >
-            <ShieldAlert className="h-4 w-4" />
-            <span>{isChecking ? 'Checking...' : 'Check Plagiarism'}</span>
+            <Globe className="h-4 w-4 text-cyan-200" />
+            <span>{isChecking ? 'Scanning Internet...' : 'Check Internet Plagiarism'}</span>
           </button>
 
           <label className="flex items-center space-x-1.5 cursor-pointer bg-slate-950 px-2.5 py-1.5 rounded-lg border border-slate-800 text-xs text-slate-300 hover:border-slate-700 select-none">
@@ -294,7 +295,7 @@ export const EditorView: React.FC<EditorViewProps> = ({
               className="rounded bg-slate-900 border-slate-700 text-cyan-500 focus:ring-0"
             />
             <Globe className="h-3.5 w-3.5 text-cyan-400" />
-            <span>Live GitHub</span>
+            <span>Internet Search</span>
           </label>
 
           <button
