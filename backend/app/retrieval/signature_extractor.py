@@ -49,7 +49,16 @@ DISTINCTIVE_ALGO_ROOTS: List[str] = [
     "rabin", "karp", "boyer", "moore", "aho", "corasick", "convex_hull", "graham", "jarvis",
     "levenshtein", "edit_distance", "max_flow", "dinic", "ford_fulkerson", "topological_sort",
     "bipartite", "sieve_eratosthenes", "modular_inverse", "gaussian_elimination",
+    # Compiler Design & Code Optimization keywords
+    "tac", "three_address", "quadruple", "triple", "constant", "propagation", "folding",
+    "dead_code", "code_optimization", "lexer", "parser", "symbol_table", "intermediate_code",
+    "cfg", "basic_block", "dag", "syntax_tree",
 ]
+
+GENERIC_HELPER_FUNCS: Set[str] = {
+    "isnumber", "is_number", "isdigit", "is_digit", "helper", "check", "temp", "foo", "bar",
+    "test", "solve", "func", "val", "get", "set", "util", "print", "display",
+}
 
 HIGH_ENTROPY_CONSTANTS: Set[str] = {
     "1000000007", "998244353", "2147483647", "1000000009", "1000000000",
@@ -79,17 +88,20 @@ def _score_identifier(name: str, is_func: bool = False) -> float:
 
     score = 1.0
 
-    # User-defined custom function names are high-priority query tokens
+    # User-defined custom function names are high-priority query tokens, unless generic helpers
+    clean_lower = clean.lower()
     if is_func:
-        if clean.lower() == "main":
+        if clean_lower == "main":
             return 0.0
-        score += 2.5
+        if clean_lower not in GENERIC_HELPER_FUNCS:
+            score += 2.5
+        else:
+            score += 0.5
 
     # Algorithm root match
-    clean_lower = clean.lower()
     for root in DISTINCTIVE_ALGO_ROOTS:
         if root in clean_lower or (len(clean_lower) >= 3 and clean_lower in root):
-            score += 3.5
+            score += 4.0
             break
 
     # Length factor (longer names are typically more unique)
@@ -169,7 +181,21 @@ def extract_signatures(language: str, source: str, max_tokens: int = 4) -> List[
                     scored_candidates.append((name, score))
                     seen.add(name)
 
-    # 2. General identifiers (variables, constants, struct fields)
+    # 2. Custom struct and typedef names (e.g. typedef struct { ... } TAC; or struct Node {)
+    type_patterns = [
+        r"\}\s*([A-Za-z_][A-Za-z0-9_]*)\s*;",
+        r"\b(?:struct|class|enum)\s+([A-Za-z_][A-Za-z0-9_]*)\s*\{",
+    ]
+    for pattern in type_patterns:
+        for match in re.finditer(pattern, source):
+            name = match.group(1).strip()
+            if name and name not in seen:
+                score = _score_identifier(name, is_func=False) + 2.5
+                if score >= 3.0:
+                    scored_candidates.append((name, score))
+                    seen.add(name)
+
+    # 3. General identifiers (variables, constants, struct fields)
     all_identifiers = set(re.findall(r"\b[A-Za-z_][A-Za-z0-9_]{2,}\b", source))
     for name in all_identifiers:
         if name not in seen:

@@ -62,11 +62,13 @@ def main() -> int:
 
   const [activeQuerySource, setActiveQuerySource] = useState<string>(querySource);
 
-  // Automatically select 'web' if webPlagiarism yields results
+  // Automatically select 'web' tab whenever internet plagiarism checking was performed
   React.useEffect(() => {
-    if (webPlagiarism && webPlagiarism.matches && webPlagiarism.matches.length > 0) {
+    if (webPlagiarism && webPlagiarism.checked) {
       setActiveSourceTab('web');
-      setSelectedWebMatchIndex(0);
+      if (webPlagiarism.matches && webPlagiarism.matches.length > 0) {
+        setSelectedWebMatchIndex(0);
+      }
     } else if (reports.length > 0) {
       setActiveSourceTab('local');
       setSelectedLocalMatchIndex(0);

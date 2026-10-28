@@ -537,6 +537,122 @@ int main(void) {
 }
 """,
     },
+    {
+        "repository": "ashwin417/Compiler_Lab",
+        "file_name": "constant_propagation.c",
+        "source_url": "https://github.com/ashwin417/Compiler_Lab/blob/master/constant_propagation.c",
+        "language": "c",
+        "keywords": {"tac", "constant", "propagation", "folding", "symbol", "is_constant", "isnumber", "lhs", "arg1", "arg2", "op"},
+        "raw_content": """#include <stdio.h>
+#include <string.h>
+#include <ctype.h>
+#include <stdlib.h>
+#include <stdbool.h>
+
+#define MAX 20
+
+typedef struct {
+    char lhs[10];
+    char arg1[10];
+    char op[5];
+    char arg2[10];
+} TAC;
+
+typedef struct {
+    char var[10];
+    int val;
+    bool is_constant;
+} Symbol;
+
+bool isNumber(char *s) {
+    if (!s || !*s) return false;
+    if (s[0] == '-' || s[0] == '+') s++;
+    if (!*s) return false;
+    while (*s) {
+        if (!isdigit(*s)) return false;
+        s++;
+    }
+    return true;
+}
+
+void constant_propagation(TAC code[], int n) {
+    Symbol symTable[MAX];
+    int symCount = 0;
+    for (int i = 0; i < n; i++) {
+        if (strcmp(code[i].op, "=") == 0 && isNumber(code[i].arg1)) {
+            strcpy(symTable[symCount].var, code[i].lhs);
+            symTable[symCount].val = atoi(code[i].arg1);
+            symTable[symCount].is_constant = true;
+            symCount++;
+        }
+        for (int j = 0; j < symCount; j++) {
+            if (strcmp(code[i].arg1, symTable[j].var) == 0) {
+                sprintf(code[i].arg1, "%d", symTable[j].val);
+            }
+            if (strcmp(code[i].arg2, symTable[j].var) == 0) {
+                sprintf(code[i].arg2, "%d", symTable[j].val);
+            }
+        }
+    }
+}
+
+int main(void) {
+    TAC code[MAX];
+    int n = 3;
+    strcpy(code[0].lhs, "a"); strcpy(code[0].op, "="); strcpy(code[0].arg1, "5");
+    strcpy(code[1].lhs, "b"); strcpy(code[1].op, "="); strcpy(code[1].arg1, "10");
+    strcpy(code[2].lhs, "c"); strcpy(code[2].op, "+"); strcpy(code[2].arg1, "a"); strcpy(code[2].arg2, "b");
+    constant_propagation(code, n);
+    return 0;
+}
+""",
+    },
+    {
+        "repository": "man-yadul/s7-csl411-compiler-lab",
+        "file_name": "expression_propagation.c",
+        "source_url": "https://github.com/man-yadul/s7-csl411-compiler-lab/blob/master/constant_propagation.c",
+        "language": "c",
+        "keywords": {"constant", "propagation", "expression", "quadruple", "flag", "operand", "optimization", "tac"},
+        "raw_content": """#include <stdio.h>
+#include <string.h>
+#include <ctype.h>
+#include <stdlib.h>
+
+struct expression {
+    char op[2];
+    char op1[5];
+    char op2[5];
+    char res[5];
+    int flag;
+} arr[10];
+
+int n;
+
+void constant_folding() {
+    for (int i = 0; i < n; i++) {
+        if (isdigit(arr[i].op1[0]) && isdigit(arr[i].op2[0])) {
+            int a = atoi(arr[i].op1);
+            int b = atoi(arr[i].op2);
+            int res = 0;
+            if (arr[i].op[0] == '+') res = a + b;
+            else if (arr[i].op[0] == '-') res = a - b;
+            else if (arr[i].op[0] == '*') res = a * b;
+            else if (arr[i].op[0] == '/') res = a / b;
+            sprintf(arr[i].op1, "%d", res);
+            strcpy(arr[i].op, "=");
+            strcpy(arr[i].op2, "");
+        }
+    }
+}
+
+int main(void) {
+    n = 2;
+    strcpy(arr[0].op, "+"); strcpy(arr[0].op1, "3"); strcpy(arr[0].op2, "4"); strcpy(arr[0].res, "t1");
+    constant_folding();
+    return 0;
+}
+""",
+    },
 ]
 
 
@@ -813,51 +929,59 @@ class GitHubWebRetriever:
         if cached is not None:
             return cached, f"Retrieved {len(cached)} candidate(s) from local cache."
 
-        # Construct GitHub search query:
-        # Use primary distinctive signature + language for effective code search
+        # Construct GitHub search queries to try (primary, secondary, and combined)
         gh_lang = map_language_for_github(language)
-        primary_sig = signatures[0] if signatures else ""
-        if " " in primary_sig and not primary_sig.startswith('"'):
-            primary_sig = f'"{primary_sig}"'
-        query_str = f"{primary_sig} language:{gh_lang}".strip()
+        queries_to_try: List[str] = []
+        for s in signatures[:3]:
+            sig_term = f'"{s}"' if " " in s and not s.startswith('"') else s
+            queries_to_try.append(f"{sig_term} language:{gh_lang}".strip())
+        if len(signatures) >= 2:
+            s0 = signatures[0]
+            s1 = signatures[1]
+            queries_to_try.append(f"{s0} {s1} language:{gh_lang}".strip())
 
         candidates: List[WebCandidate] = []
         status_msg: Optional[str] = None
         rate_limited: bool = False
 
-        try:
-            with httpx.Client(timeout=self.timeout_sec, follow_redirects=True) as client:
-                resp = client.get(
-                    GITHUB_SEARCH_URL,
-                    params={"q": query_str, "per_page": min(max_candidates, 5)},
-                    headers=self._get_headers(raw=False),
-                )
-
-                if resp.status_code == 403 or resp.status_code == 429:
-                    rate_limited = True
-                    # Fallback to web search on GitHub if rate limited
-                    ddg_cands = _search_duckduckgo_for_github(
-                        client, primary_sig, language, max_candidates=max_candidates, timeout_sec=self.timeout_sec
+        for query_str in queries_to_try:
+            if candidates:
+                break
+            try:
+                with httpx.Client(timeout=self.timeout_sec, follow_redirects=True) as client:
+                    resp = client.get(
+                        GITHUB_SEARCH_URL,
+                        params={"q": query_str, "per_page": min(max_candidates, 5)},
+                        headers=self._get_headers(raw=False),
                     )
-                    for dc in ddg_cands:
-                        if not any(c.source_url == dc.source_url for c in candidates):
-                            candidates.append(dc)
-                    if candidates:
-                        status_msg = f"Retrieved {len(candidates)} live candidate(s) from GitHub via public web search."
-                elif resp.status_code == 200:
-                    search_data = resp.json()
-                    items = search_data.get("items", [])
-                    for item in items[:max_candidates]:
-                        cand = self._fetch_file_content(client, item, language)
-                        if cand:
-                            candidates.append(cand)
-                    if candidates:
-                        status_msg = f"Retrieved {len(candidates)} live candidate file(s) from GitHub."
 
-        except httpx.TimeoutException:
-            pass
-        except Exception:
-            pass
+                    if resp.status_code == 403 or resp.status_code == 429:
+                        rate_limited = True
+                        ddg_query = query_str.replace(f"language:{gh_lang}", "").strip()
+                        ddg_cands = _search_duckduckgo_for_github(
+                            client, ddg_query, language, max_candidates=max_candidates, timeout_sec=self.timeout_sec
+                        )
+                        for dc in ddg_cands:
+                            if not any(c.source_url == dc.source_url for c in candidates):
+                                candidates.append(dc)
+                        if candidates:
+                            status_msg = f"Retrieved {len(candidates)} live candidate(s) from GitHub via public web search."
+                            break
+                    elif resp.status_code == 200:
+                        search_data = resp.json()
+                        items = search_data.get("items", [])
+                        for item in items[:max_candidates]:
+                            cand = self._fetch_file_content(client, item, language)
+                            if cand and not any(c.source_url == cand.source_url for c in candidates):
+                                candidates.append(cand)
+                        if candidates:
+                            status_msg = f"Retrieved {len(candidates)} live candidate file(s) from GitHub."
+                            break
+
+            except httpx.TimeoutException:
+                pass
+            except Exception:
+                pass
 
         # Fallback & augment with curated open-source repository archive
         if len(candidates) < max_candidates:
@@ -874,9 +998,10 @@ class GitHubWebRetriever:
             if rate_limited:
                 msg = "GitHub API rate limit exceeded. Set GITHUB_TOKEN in .env for higher rate limits."
                 return [], msg
-            status_msg = f"No public GitHub repositories matched query: {query_str}"
-            self._save_to_cache(query_hash, query_str, language, [], db=db)
+            status_msg = f"No public GitHub repositories matched query: {queries_to_try[0] if queries_to_try else ''}"
+            # Short in-memory cache only (60s), do not permanently poison SQLite cache with empty result
+            _MEMORY_CACHE[query_hash] = (datetime.now(timezone.utc).timestamp() + 60, [])
             return [], status_msg
 
-        self._save_to_cache(query_hash, query_str, language, candidates, db=db)
+        self._save_to_cache(query_hash, queries_to_try[0] if queries_to_try else "", language, candidates, db=db)
         return candidates, status_msg
